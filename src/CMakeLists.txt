@@ -12,8 +12,8 @@ doctest_discover_tests(mx-lib-test ADD_LABELS 0)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED)
 
-add_executable(cnt main.cpp)
-target_link_libraries(cnt PRIVATE mx-lib spdlog::spdlog Boost::headers)
-target_compile_definitions(cnt PRIVATE FMT_ENFORCE_COMPILE_STRING)
+add_executable(oberon-0 main.cpp)
+target_link_libraries(oberon-0 PRIVATE mx-lib spdlog::spdlog Boost::headers)
+target_compile_definitions(oberon-0 PRIVATE FMT_ENFORCE_COMPILE_STRING)
 
-install(TARGETS cnt DESTINATION bin)
+install(TARGETS oberon-0 DESTINATION bin)

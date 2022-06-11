@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(cpp-vcpkg-template)
+project(pl-0)
 
 include(cmake/ProjectDefaults.cmake)
 
