@@ -5,7 +5,7 @@
   "dependencies": [
     "boost",
     "catch2",
-    "spdlog",
+    "fmt",
     "mio"
   ]
 }

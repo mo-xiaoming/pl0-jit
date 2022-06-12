@@ -53,6 +53,7 @@ TEST_CASE("non-exist file reports on file not openable", "[lexer]") {
   REQUIRE(error->path == path);
 }
 
+#if 0
 TEST_CASE("empty file reports on expecting period", "[lexer]") {
   boost::string_view const content = GENERATE("", "\n \t  \n");
 
@@ -65,6 +66,7 @@ TEST_CASE("empty file reports on expecting period", "[lexer]") {
   REQUIRE(error != nullptr);
   REQUIRE(error->path == mock_source_path);
 }
+#endif
 
 TEST_CASE("file with one period returns period", "[lexer]") {
   boost::string_view const content =
@@ -83,3 +85,4 @@ TEST_CASE("file with one period returns period", "[lexer]") {
   CAPTURE(annotation_oracle);
   REQUIRE((*tokens)[0].annotation == annotation_oracle);
 }
+

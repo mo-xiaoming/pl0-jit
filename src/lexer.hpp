@@ -9,9 +9,10 @@
 #include <boost/type_traits/declval.hpp>
 #include <boost/utility/string_view.hpp>
 #include <boost/variant2/variant.hpp>
-#include <cstddef>
+#include <fmt/core.h>
 #include <mio/mmap.hpp>
 
+#include <cstddef>
 #include <system_error>
 #include <vector>
 
@@ -55,6 +56,7 @@ stringify_symbol(symbol_t sym) noexcept {
   using enum symbol_t;
   // NOLINTNEXTLINE
   constexpr boost::string_view strings[] = {
+      // NOLINTNEXTLINE
       [static_cast<std::size_t>(ident)] = "identifier",
       [static_cast<std::size_t>(semicolon)] = ";",
       [static_cast<std::size_t>(comma)] = ",",
@@ -136,6 +138,14 @@ skip_whitespaces(char const* content, std::size_t size, std::size_t cur_pos) {
   return static_cast<std::size_t>(std::distance(content, it));
 }
 
+[[nodiscard]] inline boost::optional<char>
+peek_next_char(char const* content, std::size_t size, std::size_t cur_pos) {
+  if (cur_pos == size) {
+    return boost::none;
+  }
+  return content[cur_pos];
+}
+
 template <reader_concept T>
 [[nodiscard]] lex_result_t lex(boost::string_view path, T&& reader) {
   auto const possible_ret = std::forward<T>(reader)(path);
@@ -152,16 +162,24 @@ template <reader_concept T>
   }
 
   auto tokens = tokens_t();
-  if (content[cur_pos] == '.') {
-    tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::period);
+
+  while (auto const pc = peek_next_char(content, size, cur_pos)) {
+    if (!pc.has_value()) {
+      break;
+    }
+    char const c = *pc;
+    switch (c) {
+    case '.':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::period);
+      break;
+    default:
+      if (!std::isspace(static_cast<unsigned char>(c))) {
+        fmt::print("unknown char '{}'\n", c);
+      }
+    }
     ++cur_pos;
   }
-
-  cur_pos = skip_whitespaces(content, size, cur_pos);
-  if (cur_pos == size) {
-    return tokens;
-  }
-  return {};
+  return tokens;
 }
 } // namespace detail
 
