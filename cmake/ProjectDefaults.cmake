@@ -16,6 +16,7 @@ target_compile_features(default_compile_features INTERFACE cxx_std_20)
 
 add_library(default_compile_options INTERFACE)
 target_compile_options(default_compile_options INTERFACE "$<$<NOT:$<CONFIG:Release>>:-U_FORTIFY_SOURCE;-O0;-ggdb3;-fno-omit-frame-pointer;-fno-inline;-fno-sanitize-recover=all>")
+target_compile_options(default_compile_options INTERFACE -fno-exceptions -fno-rtti)
 target_compile_options(default_compile_options INTERFACE "$<$<CONFIG:Release>:-march=native>")
 target_compile_options(default_compile_options INTERFACE "$<$<CXX_COMPILER_ID:GNU>:-fdiagnostics-color=always>")
 target_compile_options(default_compile_options INTERFACE "$<$<CXX_COMPILER_ID:AppleClang,Clang>:-fcolor-diagnostics>")
@@ -40,13 +41,4 @@ target_link_libraries(project_defaults INTERFACE
   default_compile_warnings
   default_sanitizer_compile_options
   default_sanitizer_link_options
-)
-
-add_library(compile_options_no_exceptions_nor_rtti INTERFACE)
-target_compile_options(compile_options_no_exceptions_nor_rtti INTERFACE -fno-exceptions -fno-rtti)
-
-add_library(project_defaults_lt INTERFACE)
-target_link_libraries(project_defaults_lt INTERFACE
-  project_defaults
-  compile_options_no_exceptions_nor_rtti
 )

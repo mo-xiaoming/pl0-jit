@@ -4,9 +4,9 @@ project(pl-0)
 include(cmake/ProjectDefaults.cmake)
 
 list(APPEND CMAKE_CTEST_ARGUMENTS "--output-on-failure")
-find_package(doctest REQUIRED)
+find_package(Catch2 3 REQUIRED)
 enable_testing()
 include(CTest)
-include(doctest)
+include(Catch)
 
 add_subdirectory(src)
