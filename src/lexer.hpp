@@ -2,8 +2,10 @@
 #define PL0_LEXER_HPP__
 
 #include "annotation.hpp"
+#include "utils.hpp"
 
 #include <boost/algorithm/cxx11/find_if_not.hpp>
+#include <boost/algorithm/cxx14/equal.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
 #include <boost/type_traits/declval.hpp>
@@ -133,8 +135,7 @@ namespace detail {
 [[nodiscard]] inline std::size_t
 skip_whitespaces(char const* content, std::size_t size, std::size_t cur_pos) {
   auto const* const it = boost::algorithm::find_if_not(
-      content + cur_pos, content + size,
-      [](unsigned char c) { return std::isspace(c); });
+      content + cur_pos, content + size, utils::isspace_s);
   return static_cast<std::size_t>(std::distance(content, it));
 }
 
@@ -144,6 +145,38 @@ peek_next_char(char const* content, std::size_t size, std::size_t cur_pos) {
     return boost::none;
   }
   return content[cur_pos];
+}
+
+[[nodiscard]] inline boost::string_view
+get_number(char const* content, std::size_t size, std::size_t cur_pos) {
+  auto const* const it = boost::algorithm::find_if_not(
+      content + cur_pos, content + size, utils::isdigit_s);
+  return {content + cur_pos,
+          static_cast<std::size_t>(it - (content + cur_pos))};
+}
+
+[[nodiscard]] inline bool peek_keyword(char const* content, std::size_t size,
+                                       std::size_t cur_pos,
+                                       boost::string_view expected) {
+  if (size - cur_pos < expected.size()) {
+    return false;
+  }
+  if (!boost::algorithm::equal(content + cur_pos, content + size,
+                               expected.cbegin(), expected.cend())) {
+    return false;
+  }
+  if (cur_pos + expected.size() == size) {
+    return true;
+  }
+  return !utils::isident_s(content[cur_pos + expected.size()]);
+}
+
+[[nodiscard]] inline boost::string_view
+get_identifier(char const* content, std::size_t size, std::size_t cur_pos) {
+  auto const* const it = boost::algorithm::find_if_not(
+      content + cur_pos, content + size, utils::isident_s);
+  return {content + cur_pos,
+          static_cast<std::size_t>(it - (content + cur_pos))};
 }
 
 template <reader_concept T>
@@ -169,13 +202,226 @@ template <reader_concept T>
     }
     char const c = *pc;
     switch (c) {
+    case ';':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1},
+                          symbol_t::semicolon);
+      break;
+    case ',':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::comma);
+      break;
+    case '(':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::lparen);
+      break;
+    case ')':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::rparen);
+      break;
+    case '*':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::times);
+      break;
+    case '/':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::divide);
+      break;
+    case '+':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::plus);
+      break;
+    case '-':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::minus);
+      break;
+    case '=':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::equal);
+      break;
+    case '#':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1},
+                          symbol_t::not_equal);
+      break;
+    case '<': {
+      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
+          nc.has_value() && *nc == '=') {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
+                            symbol_t::less_equal);
+        ++cur_pos;
+      } else {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::less);
+      }
+      break;
+    }
+    case '>': {
+      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
+          nc.has_value() && *nc == '=') {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
+                            symbol_t::greater_equal);
+        ++cur_pos;
+      } else {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 1},
+                            symbol_t::greater);
+      }
+      break;
+    }
+    case ':': {
+      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
+          nc.has_value() && *nc == '=') {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
+                            symbol_t::assign);
+        ++cur_pos;
+      } else {
+        fmt::print("unexpected char '{}', should it be ':='?\n", c);
+      }
+      break;
+    }
+    case '?':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::in);
+      break;
+    case '!':
+      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::out);
+      break;
     case '.':
       tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::period);
       break;
-    default:
-      if (!std::isspace(static_cast<unsigned char>(c))) {
-        fmt::print("unknown char '{}'\n", c);
+    case '0' ... '9': {
+      auto const num = get_number(content, size, cur_pos);
+      tokens.emplace_back(annotation_t{&content[cur_pos], num.size()},
+                          symbol_t::number);
+      cur_pos += num.size() - 1U;
+      break;
+    }
+    case 'c': {
+      if (peek_keyword(content, size, cur_pos, "call")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 4}, symbol_t::call);
+        cur_pos += 3;
+      } else if (peek_keyword(content, size, cur_pos, "const")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 5}, symbol_t::call);
+        cur_pos += 4;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
       }
+      break;
+    }
+    case 'o': {
+      if (peek_keyword(content, size, cur_pos, "odd")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::odd);
+        cur_pos += 2;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'b': {
+      if (peek_keyword(content, size, cur_pos, "begin")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 5},
+                            symbol_t::begin);
+        cur_pos += 4;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'e': {
+      if (peek_keyword(content, size, cur_pos, "end")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::end);
+        cur_pos += 2;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'i': {
+      if (peek_keyword(content, size, cur_pos, "if")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 2}, symbol_t::if_);
+        cur_pos += 1;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'w': {
+      if (peek_keyword(content, size, cur_pos, "while")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 5},
+                            symbol_t::while_);
+        cur_pos += 4;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 't': {
+      if (peek_keyword(content, size, cur_pos, "then")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 4}, symbol_t::then);
+        cur_pos += 3;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'd': {
+      if (peek_keyword(content, size, cur_pos, "d")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 2}, symbol_t::do_);
+        cur_pos += 1;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'v': {
+      if (peek_keyword(content, size, cur_pos, "var")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::var);
+        cur_pos += 2;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    case 'p': {
+      if (peek_keyword(content, size, cur_pos, "procedure")) {
+        tokens.emplace_back(annotation_t{&content[cur_pos], 9}, symbol_t::proc);
+        cur_pos += 8;
+      } else {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+      }
+      break;
+    }
+    default:
+      if (utils::isspace_s(c)) {
+        break;
+      }
+      if (utils::isalpha_s(c)) {
+        auto const ident = get_identifier(content, size, cur_pos);
+        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
+                            symbol_t::ident);
+        cur_pos += ident.size() - 1U;
+        break;
+      }
+      fmt::print("unknown char '{}'\n", c);
+      break;
     }
     ++cur_pos;
   }

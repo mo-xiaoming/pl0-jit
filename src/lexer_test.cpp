@@ -85,4 +85,3 @@ TEST_CASE("file with one period returns period", "[lexer]") {
   CAPTURE(annotation_oracle);
   REQUIRE((*tokens)[0].annotation == annotation_oracle);
 }
-
