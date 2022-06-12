@@ -32,45 +32,13 @@ factor =
     | "(" expression ")" .
 */
 
+#include "lexer.hpp"
+
 #include <cstdlib>
 #include <initializer_list>
 #include <optional>
 
 #include <spdlog/spdlog.h>
-
-enum class symbol_t {
-  ident,
-  number,
-  lparen,
-  rparen,
-  times,
-  slash,
-  plus,
-  minus,
-  eql,
-  neq,
-  lss,
-  leq,
-  gtr,
-  geq,
-  callsym,
-  insym,
-  outsym,
-  beginsym,
-  semicolon,
-  endsym,
-  ifsym,
-  whilesym,
-  becomes,
-  thensym,
-  dosym,
-  constsym,
-  comma,
-  varsym,
-  procsym,
-  period,
-  oddsym
-};
 
 template <typename T>
 concept loggable = requires(const T& v) {

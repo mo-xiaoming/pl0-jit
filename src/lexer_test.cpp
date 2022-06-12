@@ -16,12 +16,12 @@ namespace {
   return boost::none;
 }
 
-constexpr auto mock_source_path = boost::string_ref();
+constexpr auto mock_source_path = boost::string_view();
 } // namespace
 
 TEST_CASE("non-exist file reports on file not openable") {
   auto const tmp_path = get_unique_path();
-  CHECK(tmp_path);
+  CHECK(tmp_path.has_value());
 
   auto const path = tmp_path->string();
 
@@ -33,7 +33,7 @@ TEST_CASE("non-exist file reports on file not openable") {
 }
 
 TEST_CASE("empty file reports on expecting period") {
-  constexpr auto content = boost::string_ref();
+  constexpr auto content = boost::string_view();
 
   auto const ret = lexer::detail::lex(
       mock_source_path, [content](auto) -> lexer::detail::read_result_t {
@@ -44,3 +44,18 @@ TEST_CASE("empty file reports on expecting period") {
   CHECK_NE(error, nullptr);
   CHECK_EQ(error->path, mock_source_path);
 }
+
+#if 0
+TEST_CASE("file with one period returns period") {
+  constexpr auto content = boost::string_view(".");
+
+  auto const ret = lexer::detail::lex(
+      mock_source_path, [content](auto) -> lexer::detail::read_result_t {
+        return std::pair(content.data(), content.size());
+      });
+  auto const* const error =
+      boost::variant2::get_if<lexer::lex_error_missing_ending_period_t>(&ret);
+  CHECK_NE(error, nullptr);
+  CHECK_EQ(error->path, mock_source_path);
+}
+#endif
