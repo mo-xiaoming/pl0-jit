@@ -14,7 +14,7 @@ namespace lexer {
 namespace detail {
 using read_result_t = boost::optional<std::pair<char const*, std::size_t>>;
 
-[[nodiscard]] inline read_result_t read(std::string const& path) noexcept {
+[[nodiscard]] inline read_result_t read(boost::string_ref path) noexcept {
   auto error = std::error_code();
   if (auto const input = mio::make_mmap_source(path, error); !error) {
     return std::pair(input.data(), input.size());
@@ -24,32 +24,33 @@ using read_result_t = boost::optional<std::pair<char const*, std::size_t>>;
 
 template <typename T>
 concept reader_concept = requires(T reader) {
-  {
-    reader(boost::declval<std::string const&>())
-    } -> std::same_as<detail::read_result_t>;
+  { reader(boost::string_ref()) } -> std::same_as<detail::read_result_t>;
 };
 } // namespace detail
 
 struct lex_error_file_unreadable_t {
   boost::string_ref path;
 };
-
-using lex_error_t = boost::variant2::variant<lex_error_file_unreadable_t>;
+struct lex_error_missing_ending_period_t {
+  boost::string_ref path;
+};
+using lex_error_t = boost::variant2::variant<lex_error_file_unreadable_t,
+                                             lex_error_missing_ending_period_t>;
 
 namespace detail {
 template <reader_concept T>
-lex_error_t lex(std::string const& path, T&& reader) {
+[[nodiscard]] lex_error_t lex(boost::string_ref path, T&& reader) {
   auto const possible_ret = std::forward<T>(reader)(path);
   if (!possible_ret.has_value()) {
     return lex_error_file_unreadable_t{path};
   }
 
   // auto const& [content, size] = possible_ret.value();
-  return {};
+  return lex_error_missing_ending_period_t{path};
 }
 } // namespace detail
 
-inline lex_error_t lex(std::string const& path) {
+[[nodiscard]] inline lex_error_t lex(std::string const& path) {
   return detail::lex(path, detail::read);
 }
 } // namespace lexer
