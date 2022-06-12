@@ -1,1 +1,3 @@
 BasedOnStyle: LLVM
+QualifierAlignment: Right
+PointerAlignment: Left

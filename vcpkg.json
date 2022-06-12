@@ -5,6 +5,7 @@
   "dependencies": [
     "boost",
     "doctest",
-    "spdlog"
+    "spdlog",
+    "mio"
   ]
 }

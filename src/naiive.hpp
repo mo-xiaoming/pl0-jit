@@ -1,3 +1,6 @@
+#ifndef PL0_PASER_HPP__
+#define PL0_PASER_HPP__
+
 /*
 program = block "." .
 
@@ -70,12 +73,12 @@ enum class symbol_t {
 };
 
 template <typename T>
-concept loggable = requires(const T &v) {
+concept loggable = requires(const T& v) {
   spdlog::info(v);
 };
 
 namespace detail {
-void error(const loggable auto &s) {
+void error(const loggable auto& s) {
   spdlog::critical(s);
   std::exit(EXIT_FAILURE);
 }
@@ -94,7 +97,7 @@ private:
   }
 
   std::optional<symbol_t> expect_any_of(std::initializer_list<symbol_t> ss) {
-    if (const auto *it = std::find(ss.begin(), ss.end(), _sym);
+    if (auto const* it = std::find(ss.begin(), ss.end(), _sym);
         it != ss.end()) {
       detail::next_sym();
       return *it;
@@ -111,7 +114,7 @@ private:
   }
 
   std::optional<symbol_t> must_be_any_of(std::initializer_list<symbol_t> ss) {
-    if (const auto ret = expect_any_of(ss); ret) {
+    if (auto const ret = expect_any_of(ss); ret) {
       return ret;
     }
     detail::error("unexpected symbol");
@@ -141,7 +144,7 @@ private:
   }
 
   void expression() {
-    const auto expect_plus_or_minus = [this] {
+    auto const expect_plus_or_minus = [this] {
       return expect_any_of({symbol_t::plus, symbol_t::minus});
     };
 
@@ -221,3 +224,5 @@ private:
   }
   symbol_t _sym;
 };
+
+#endif
