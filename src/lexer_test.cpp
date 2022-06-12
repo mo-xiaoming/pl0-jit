@@ -39,9 +39,8 @@ constexpr auto mock_source_path = boost::string_view();
 }
 } // namespace
 
-// clang-format off
-TEST_CASE("non-exist file reports on file not openable", "[lexer]") { // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-  // clang-format on
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+TEST_CASE("non-exist file reports on file not openable", "[lexer]") {
   auto const tmp_path = get_unique_path();
   CHECK(tmp_path.has_value());
 
