@@ -1,11 +1,14 @@
+#include "annotation.hpp"
 #include "lexer.hpp"
 
+#include <boost/algorithm/searching/boyer_moore.hpp>
 #include <boost/array.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/optional/optional_io.hpp>
 #include <boost/system/is_error_code_enum.hpp>
 
+#include <boost/utility/string_view_fwd.hpp>
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -26,6 +29,13 @@ constexpr auto mock_source_path = boost::string_view();
                             [content](auto) -> lexer::detail::read_result_t {
                               return std::pair(content.data(), content.size());
                             });
+}
+
+[[nodiscard]] annotation_t create_test_token(boost::string_view content,
+                                             boost::string_view symbol_str) {
+  auto const pos = content.find(symbol_str);
+  REQUIRE(pos != boost::string_view::npos);
+  return {.start = &content[pos], .length = symbol_str.size()};
 }
 } // namespace
 
@@ -69,4 +79,8 @@ TEST_CASE("file with one period returns period", "[lexer]") {
   REQUIRE(tokens != nullptr);
   REQUIRE(tokens->size() == 1U);
   REQUIRE((*tokens)[0].symbol == lexer::symbol_t::period);
+
+  auto const annotation_oracle = create_test_token(content, ".");
+  CAPTURE(annotation_oracle);
+  REQUIRE((*tokens)[0].annotation == annotation_oracle);
 }
