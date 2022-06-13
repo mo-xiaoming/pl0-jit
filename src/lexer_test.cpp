@@ -2,7 +2,6 @@
 #include "lexer.hpp"
 
 #include <boost/algorithm/searching/boyer_moore.hpp>
-#include <boost/array.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/optional/optional_io.hpp>
@@ -53,21 +52,6 @@ TEST_CASE("non-exist file reports on file not openable", "[lexer]") {
   REQUIRE(error->path == path);
 }
 
-#if 0
-TEST_CASE("empty file reports on expecting period", "[lexer]") {
-  boost::string_view const content = GENERATE("", "\n \t  \n");
-
-  CAPTURE(content);
-
-  auto const ret = lex(content);
-
-  auto const* const error =
-      boost::variant2::get_if<lexer::lex_error_missing_ending_period_t>(&ret);
-  REQUIRE(error != nullptr);
-  REQUIRE(error->path == mock_source_path);
-}
-#endif
-
 TEST_CASE("file with one period returns period", "[lexer]") {
   boost::string_view const content =
       GENERATE(".", "  .", "\n \t \v  \n.", " \n   . \n");
@@ -85,3 +69,68 @@ TEST_CASE("file with one period returns period", "[lexer]") {
   CAPTURE(annotation_oracle);
   REQUIRE((*tokens)[0].annotation == annotation_oracle);
 }
+
+TEST_CASE("file with multi symbols", "[lexer]") {
+  auto const ret = lex(R"(var x, squ;
+
+procedure square;
+begin
+   squ:= x * x
+end;
+
+begin
+  x := 5
+  call square
+end.
+)");
+
+  constexpr auto tokens_oracle = std::array{
+      lexer::symbol_t::var,       // var
+      lexer::symbol_t::ident,     // x
+      lexer::symbol_t::comma,     // ,
+      lexer::symbol_t::ident,     // squ
+      lexer::symbol_t::semicolon, // ;
+      lexer::symbol_t::proc,      // procedure
+      lexer::symbol_t::ident,     // square
+      lexer::symbol_t::semicolon, // ;
+      lexer::symbol_t::begin,     // begin
+      lexer::symbol_t::ident,     // squ
+      lexer::symbol_t::assign,    // :=
+      lexer::symbol_t::ident,     // x
+      lexer::symbol_t::times,     // *
+      lexer::symbol_t::ident,     // x
+      lexer::symbol_t::end,       // end
+      lexer::symbol_t::semicolon, // ;
+      lexer::symbol_t::begin,     // begin
+      lexer::symbol_t::ident,     // x
+      lexer::symbol_t::assign,    // :=
+      lexer::symbol_t::number,    // 5
+      lexer::symbol_t::call,      // call
+      lexer::symbol_t::ident,     // square
+      lexer::symbol_t::end,       // end
+      lexer::symbol_t::period     // .
+  };
+
+  auto const* const tokens = boost::variant2::get_if<lexer::tokens_t>(&ret);
+  REQUIRE(tokens != nullptr);
+  REQUIRE(tokens->size() == tokens_oracle.size());
+  for (std::size_t i = 0; i != tokens_oracle.size(); ++i) {
+    CAPTURE(i);
+    REQUIRE((*tokens)[i].symbol == tokens_oracle[i]);
+  }
+}
+
+#if 0
+TEST_CASE("empty file reports on expecting period", "[lexer]") {
+  boost::string_view const content = GENERATE("", "\n \t  \n");
+
+  CAPTURE(content);
+
+  auto const ret = lex(content);
+
+  auto const* const error =
+      boost::variant2::get_if<lexer::lex_error_missing_ending_period_t>(&ret);
+  REQUIRE(error != nullptr);
+  REQUIRE(error->path == mock_source_path);
+}
+#endif

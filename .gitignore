@@ -1,6 +1,5 @@
 .cache/
-build/
+build*/
 compile_commands.json
 tags
 .vscode/
-.envrc

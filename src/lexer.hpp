@@ -128,8 +128,7 @@ struct lex_error_missing_ending_period_t {
 };
 using tokens_t = std::vector<token_t>;
 using lex_result_t =
-    boost::variant2::variant<tokens_t, lex_error_file_unreadable_t,
-                             lex_error_missing_ending_period_t>;
+    boost::variant2::variant<tokens_t, lex_error_file_unreadable_t>;
 
 namespace detail {
 [[nodiscard]] inline std::size_t
@@ -161,8 +160,9 @@ get_number(char const* content, std::size_t size, std::size_t cur_pos) {
   if (size - cur_pos < expected.size()) {
     return false;
   }
-  if (!boost::algorithm::equal(content + cur_pos, content + size,
-                               expected.cbegin(), expected.cend())) {
+  if (!boost::algorithm::equal(expected.cbegin(), expected.cend(),
+                               content + cur_pos,
+                               content + cur_pos + expected.size())) {
     return false;
   }
   if (cur_pos + expected.size() == size) {
@@ -188,11 +188,6 @@ template <reader_concept T>
 
   auto const [content, size] = *possible_ret;
   auto cur_pos = skip_whitespaces(content, size, 0);
-
-  // empty file?
-  if (cur_pos == size) {
-    return lex_error_missing_ending_period_t{path};
-  }
 
   auto tokens = tokens_t();
 
