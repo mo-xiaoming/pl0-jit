@@ -1,5 +1,5 @@
 {
-  "name": "pl-0",
+  "name": "pl0-jit",
   "version-semver": "0.1.0",
   "description": "template for a cpp app with vcpkg support",
   "dependencies": [
