@@ -171,6 +171,30 @@ get_number(char const* content, std::size_t size, std::size_t cur_pos) {
   return !utils::isident_s(content[cur_pos + expected.size()]);
 }
 
+[[nodiscard]] inline boost::optional<symbol_t>
+try_match_keyword(boost::string_view ident) {
+  static constexpr auto keywords = std::array{
+      std::pair(boost::string_view("call"), symbol_t::call),
+      std::pair(boost::string_view("odd"), symbol_t::odd),
+      std::pair(boost::string_view("begin"), symbol_t::begin),
+      std::pair(boost::string_view("end"), symbol_t::end),
+      std::pair(boost::string_view("if"), symbol_t::if_),
+      std::pair(boost::string_view("while"), symbol_t::while_),
+      std::pair(boost::string_view("then"), symbol_t::then),
+      std::pair(boost::string_view("do"), symbol_t::do_),
+      std::pair(boost::string_view("const"), symbol_t::const_),
+      std::pair(boost::string_view("var"), symbol_t::var),
+      std::pair(boost::string_view("procedure"), symbol_t::proc),
+  };
+  if (auto const* const it =
+          std::find_if(keywords.cbegin(), keywords.cend(),
+                       [ident](auto const& p) { return p.first == ident; });
+      it != keywords.cend()) {
+    return it->second;
+  }
+  return boost::none;
+}
+
 [[nodiscard]] inline boost::string_view
 get_identifier(char const* content, std::size_t size, std::size_t cur_pos) {
   auto const* const it = boost::algorithm::find_if_not(
@@ -187,10 +211,10 @@ template <reader_concept T>
   }
 
   auto const [content, size] = *possible_ret;
-  auto cur_pos = skip_whitespaces(content, size, 0);
 
   auto tokens = tokens_t();
 
+  std::size_t cur_pos = 0;
   while (auto const pc = peek_next_char(content, size, cur_pos)) {
     if (!pc.has_value()) {
       break;
@@ -279,129 +303,18 @@ template <reader_concept T>
       cur_pos += num.size() - 1U;
       break;
     }
-    case 'c': {
-      if (peek_keyword(content, size, cur_pos, "call")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 4}, symbol_t::call);
-        cur_pos += 3;
-      } else if (peek_keyword(content, size, cur_pos, "const")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 5}, symbol_t::call);
-        cur_pos += 4;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'o': {
-      if (peek_keyword(content, size, cur_pos, "odd")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::odd);
-        cur_pos += 2;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'b': {
-      if (peek_keyword(content, size, cur_pos, "begin")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 5},
-                            symbol_t::begin);
-        cur_pos += 4;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'e': {
-      if (peek_keyword(content, size, cur_pos, "end")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::end);
-        cur_pos += 2;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'i': {
-      if (peek_keyword(content, size, cur_pos, "if")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 2}, symbol_t::if_);
-        cur_pos += 1;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'w': {
-      if (peek_keyword(content, size, cur_pos, "while")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 5},
-                            symbol_t::while_);
-        cur_pos += 4;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 't': {
-      if (peek_keyword(content, size, cur_pos, "then")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 4}, symbol_t::then);
-        cur_pos += 3;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'd': {
-      if (peek_keyword(content, size, cur_pos, "d")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 2}, symbol_t::do_);
-        cur_pos += 1;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'v': {
-      if (peek_keyword(content, size, cur_pos, "var")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 3}, symbol_t::var);
-        cur_pos += 2;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
-      break;
-    }
-    case 'p': {
-      if (peek_keyword(content, size, cur_pos, "procedure")) {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 9}, symbol_t::proc);
-        cur_pos += 8;
-      } else {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-      }
+    case 'a' ... 'z':
+    case 'A' ... 'Z': {
+      auto const ident = get_identifier(content, size, cur_pos);
+      auto const sym = [ident] {
+        if (auto const possible_keyword = try_match_keyword(ident);
+            possible_keyword) {
+          return *possible_keyword;
+        }
+        return symbol_t::ident;
+      }();
+      tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()}, sym);
+      cur_pos += ident.size() - 1U;
       break;
     }
     default:
