@@ -44,7 +44,7 @@ enum class symbol_t {
   end,
   if_,
   while_,
-  assign,
+  becomes,
   then,
   do_,
   const_,
@@ -83,7 +83,7 @@ stringify_symbol(symbol_t sym) noexcept {
       [static_cast<std::size_t>(end)] = "end",
       [static_cast<std::size_t>(if_)] = "if",
       [static_cast<std::size_t>(while_)] = "while",
-      [static_cast<std::size_t>(assign)] = ":=",
+      [static_cast<std::size_t>(becomes)] = ":=",
       [static_cast<std::size_t>(then)] = "then",
       [static_cast<std::size_t>(do_)] = "do",
       [static_cast<std::size_t>(const_)] = "const",
@@ -214,6 +214,15 @@ template <reader_concept T>
 
   auto tokens = tokens_t();
 
+  auto const add_single_char_token = [&tokens, content = content](auto cur_pos,
+                                                                  auto sym) {
+    tokens.emplace_back(annotation_t{&content[cur_pos], 1}, sym);
+  };
+  auto const add_two_chars_token = [&tokens, content = content](auto cur_pos,
+                                                                auto sym) {
+    tokens.emplace_back(annotation_t{&content[cur_pos], 2}, sym);
+  };
+
   std::size_t cur_pos = 0;
   while (auto const pc = peek_next_char(content, size, cur_pos)) {
     if (!pc.has_value()) {
@@ -222,80 +231,74 @@ template <reader_concept T>
     char const c = *pc;
     switch (c) {
     case ';':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1},
-                          symbol_t::semicolon);
+      add_single_char_token(cur_pos, symbol_t::semicolon);
       break;
     case ',':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::comma);
+      add_single_char_token(cur_pos, symbol_t::comma);
       break;
     case '(':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::lparen);
+      add_single_char_token(cur_pos, symbol_t::lparen);
       break;
     case ')':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::rparen);
+      add_single_char_token(cur_pos, symbol_t::rparen);
       break;
     case '*':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::times);
+      add_single_char_token(cur_pos, symbol_t::times);
       break;
     case '/':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::divide);
+      add_single_char_token(cur_pos, symbol_t::divide);
       break;
     case '+':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::plus);
+      add_single_char_token(cur_pos, symbol_t::plus);
       break;
     case '-':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::minus);
+      add_single_char_token(cur_pos, symbol_t::minus);
       break;
     case '=':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::equal);
+      add_single_char_token(cur_pos, symbol_t::equal);
       break;
     case '#':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1},
-                          symbol_t::not_equal);
+      add_single_char_token(cur_pos, symbol_t::not_equal);
+      break;
+    case '?':
+      add_single_char_token(cur_pos, symbol_t::in);
+      break;
+    case '!':
+      add_single_char_token(cur_pos, symbol_t::out);
+      break;
+    case '.':
+      add_single_char_token(cur_pos, symbol_t::period);
       break;
     case '<': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
-                            symbol_t::less_equal);
+        add_two_chars_token(cur_pos, symbol_t::less_equal);
         ++cur_pos;
       } else {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::less);
+        add_single_char_token(cur_pos, symbol_t::less);
       }
       break;
     }
     case '>': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
-                            symbol_t::greater_equal);
+        add_two_chars_token(cur_pos, symbol_t::greater_equal);
         ++cur_pos;
       } else {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 1},
-                            symbol_t::greater);
+        add_single_char_token(cur_pos, symbol_t::greater);
       }
       break;
     }
     case ':': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        tokens.emplace_back(annotation_t{&content[cur_pos], 2},
-                            symbol_t::assign);
+        add_two_chars_token(cur_pos, symbol_t::becomes);
         ++cur_pos;
       } else {
         fmt::print("unexpected char '{}', should it be ':='?\n", c);
       }
       break;
     }
-    case '?':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::in);
-      break;
-    case '!':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::out);
-      break;
-    case '.':
-      tokens.emplace_back(annotation_t{&content[cur_pos], 1}, symbol_t::period);
-      break;
     case '0' ... '9': {
       auto const num = get_number(content, size, cur_pos);
       tokens.emplace_back(annotation_t{&content[cur_pos], num.size()},
@@ -321,15 +324,7 @@ template <reader_concept T>
       if (utils::isspace_s(c)) {
         break;
       }
-      if (utils::isalpha_s(c)) {
-        auto const ident = get_identifier(content, size, cur_pos);
-        tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()},
-                            symbol_t::ident);
-        cur_pos += ident.size() - 1U;
-        break;
-      }
       fmt::print("unknown char '{}'\n", c);
-      break;
     }
     ++cur_pos;
   }

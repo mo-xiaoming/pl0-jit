@@ -95,7 +95,7 @@ end.
       lexer::symbol_t::semicolon, // ;
       lexer::symbol_t::begin,     // begin
       lexer::symbol_t::ident,     // squ
-      lexer::symbol_t::assign,    // :=
+      lexer::symbol_t::becomes,   // :=
       lexer::symbol_t::ident,     // x
       lexer::symbol_t::times,     // *
       lexer::symbol_t::ident,     // x
@@ -103,7 +103,7 @@ end.
       lexer::symbol_t::semicolon, // ;
       lexer::symbol_t::begin,     // begin
       lexer::symbol_t::ident,     // x
-      lexer::symbol_t::assign,    // :=
+      lexer::symbol_t::becomes,   // :=
       lexer::symbol_t::number,    // 5
       lexer::symbol_t::call,      // call
       lexer::symbol_t::ident,     // square
