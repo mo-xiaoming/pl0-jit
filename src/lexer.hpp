@@ -5,17 +5,14 @@
 #include "utils.hpp"
 
 #include <boost/algorithm/cxx11/find_if_not.hpp>
-#include <boost/algorithm/cxx14/equal.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
-#include <boost/type_traits/declval.hpp>
 #include <boost/utility/string_view.hpp>
 #include <boost/variant2/variant.hpp>
 #include <fmt/core.h>
 #include <mio/mmap.hpp>
 
 #include <cstddef>
-#include <system_error>
 #include <vector>
 
 namespace lexer {

@@ -6,9 +6,9 @@ include(GNUInstallDirs)
 include(cmake/ProjectDefaults.cmake)
 
 list(APPEND CMAKE_CTEST_ARGUMENTS "--output-on-failure")
-find_package(Catch2 3 REQUIRED)
+find_package(GTest REQUIRED)
 enable_testing()
 include(CTest)
-include(Catch)
+include(GoogleTest)
 
 add_subdirectory(src)

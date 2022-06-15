@@ -4,7 +4,7 @@
   "description": "template for a cpp app with vcpkg support",
   "dependencies": [
     "boost",
-    "catch2",
+    "gtest",
     "fmt",
     "mio"
   ]
