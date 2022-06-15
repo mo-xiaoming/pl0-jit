@@ -131,12 +131,14 @@ using lex_result_t =
     boost::variant2::variant<tokens_t, lex_error_file_unreadable_t>;
 
 namespace detail {
+#if 0
 [[nodiscard]] inline std::size_t
 skip_whitespaces(char const* content, std::size_t size, std::size_t cur_pos) {
   auto const* const it = boost::algorithm::find_if_not(
       content + cur_pos, content + size, utils::isspace_s);
   return static_cast<std::size_t>(std::distance(content, it));
 }
+#endif
 
 [[nodiscard]] inline boost::optional<char>
 peek_next_char(char const* content, std::size_t size, std::size_t cur_pos) {
@@ -152,23 +154,6 @@ get_number(char const* content, std::size_t size, std::size_t cur_pos) {
       content + cur_pos, content + size, utils::isdigit_s);
   return {content + cur_pos,
           static_cast<std::size_t>(it - (content + cur_pos))};
-}
-
-[[nodiscard]] inline bool peek_keyword(char const* content, std::size_t size,
-                                       std::size_t cur_pos,
-                                       boost::string_view expected) {
-  if (size - cur_pos < expected.size()) {
-    return false;
-  }
-  if (!boost::algorithm::equal(expected.cbegin(), expected.cend(),
-                               content + cur_pos,
-                               content + cur_pos + expected.size())) {
-    return false;
-  }
-  if (cur_pos + expected.size() == size) {
-    return true;
-  }
-  return !utils::isident_s(content[cur_pos + expected.size()]);
 }
 
 [[nodiscard]] inline boost::optional<symbol_t>
@@ -214,13 +199,37 @@ template <reader_concept T>
 
   auto tokens = tokens_t();
 
-  auto const add_single_char_token = [&tokens, content = content](auto cur_pos,
-                                                                  auto sym) {
+  auto const add_single_char_token =
+      [&tokens, content = content](std::size_t cur_pos,
+                                   auto sym) -> std::size_t {
     tokens.emplace_back(annotation_t{&content[cur_pos], 1}, sym);
+    return 1U;
   };
-  auto const add_two_chars_token = [&tokens, content = content](auto cur_pos,
-                                                                auto sym) {
+  auto const add_two_chars_token =
+      [&tokens, content = content](std::size_t cur_pos,
+                                   auto sym) -> std::size_t {
     tokens.emplace_back(annotation_t{&content[cur_pos], 2}, sym);
+    return 2U;
+  };
+  auto const add_number_token =
+      [&tokens, content = content](std::size_t cur_pos,
+                                   boost::string_view num) -> std::size_t {
+    tokens.emplace_back(annotation_t{&content[cur_pos], num.size()},
+                        symbol_t::number);
+    return num.size();
+  };
+  auto const add_ident_or_keyword_token =
+      [&tokens, content = content](std::size_t cur_pos,
+                                   boost::string_view ident) -> std::size_t {
+    auto const sym = [ident] {
+      if (auto const possible_keyword = try_match_keyword(ident);
+          possible_keyword) {
+        return *possible_keyword;
+      }
+      return symbol_t::ident;
+    }();
+    tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()}, sym);
+    return ident.size();
   };
 
   std::size_t cur_pos = 0;
@@ -231,102 +240,90 @@ template <reader_concept T>
     char const c = *pc;
     switch (c) {
     case ';':
-      add_single_char_token(cur_pos, symbol_t::semicolon);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::semicolon);
       break;
     case ',':
-      add_single_char_token(cur_pos, symbol_t::comma);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::comma);
       break;
     case '(':
-      add_single_char_token(cur_pos, symbol_t::lparen);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::lparen);
       break;
     case ')':
-      add_single_char_token(cur_pos, symbol_t::rparen);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::rparen);
       break;
     case '*':
-      add_single_char_token(cur_pos, symbol_t::times);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::times);
       break;
     case '/':
-      add_single_char_token(cur_pos, symbol_t::divide);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::divide);
       break;
     case '+':
-      add_single_char_token(cur_pos, symbol_t::plus);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::plus);
       break;
     case '-':
-      add_single_char_token(cur_pos, symbol_t::minus);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::minus);
       break;
     case '=':
-      add_single_char_token(cur_pos, symbol_t::equal);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::equal);
       break;
     case '#':
-      add_single_char_token(cur_pos, symbol_t::not_equal);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::not_equal);
       break;
     case '?':
-      add_single_char_token(cur_pos, symbol_t::in);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::in);
       break;
     case '!':
-      add_single_char_token(cur_pos, symbol_t::out);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::out);
       break;
     case '.':
-      add_single_char_token(cur_pos, symbol_t::period);
+      cur_pos += add_single_char_token(cur_pos, symbol_t::period);
       break;
     case '<': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        add_two_chars_token(cur_pos, symbol_t::less_equal);
-        ++cur_pos;
+        cur_pos += add_two_chars_token(cur_pos, symbol_t::less_equal);
       } else {
-        add_single_char_token(cur_pos, symbol_t::less);
+        cur_pos += add_single_char_token(cur_pos, symbol_t::less);
       }
       break;
     }
     case '>': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        add_two_chars_token(cur_pos, symbol_t::greater_equal);
-        ++cur_pos;
+        cur_pos += add_two_chars_token(cur_pos, symbol_t::greater_equal);
       } else {
-        add_single_char_token(cur_pos, symbol_t::greater);
+        cur_pos += add_single_char_token(cur_pos, symbol_t::greater);
       }
       break;
     }
     case ':': {
       if (auto const nc = peek_next_char(content, size, cur_pos + 1);
           nc.has_value() && *nc == '=') {
-        add_two_chars_token(cur_pos, symbol_t::becomes);
-        ++cur_pos;
+        cur_pos += add_two_chars_token(cur_pos, symbol_t::becomes);
       } else {
         fmt::print("unexpected char '{}', should it be ':='?\n", c);
+        __builtin_unreachable();
       }
       break;
     }
     case '0' ... '9': {
       auto const num = get_number(content, size, cur_pos);
-      tokens.emplace_back(annotation_t{&content[cur_pos], num.size()},
-                          symbol_t::number);
-      cur_pos += num.size() - 1U;
+      cur_pos += add_number_token(cur_pos, num);
       break;
     }
     case 'a' ... 'z':
     case 'A' ... 'Z': {
       auto const ident = get_identifier(content, size, cur_pos);
-      auto const sym = [ident] {
-        if (auto const possible_keyword = try_match_keyword(ident);
-            possible_keyword) {
-          return *possible_keyword;
-        }
-        return symbol_t::ident;
-      }();
-      tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()}, sym);
-      cur_pos += ident.size() - 1U;
+      cur_pos += add_ident_or_keyword_token(cur_pos, ident);
       break;
     }
     default:
-      if (utils::isspace_s(c)) {
-        break;
+      if (!utils::isspace_s(c)) {
+        fmt::print("unknown char '{}'\n", c);
       }
-      fmt::print("unknown char '{}'\n", c);
+      ++cur_pos;
+      break;
     }
-    ++cur_pos;
   }
   return tokens;
 }
