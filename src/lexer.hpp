@@ -7,6 +7,7 @@
 #include <boost/algorithm/cxx11/find_if_not.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
+#include <boost/unordered/unordered_map.hpp>
 #include <boost/utility/string_view.hpp>
 #include <boost/variant2/variant.hpp>
 #include <fmt/core.h>
@@ -128,21 +129,29 @@ using lex_result_t =
     boost::variant2::variant<tokens_t, lex_error_file_unreadable_t>;
 
 namespace detail {
-#if 0
-[[nodiscard]] inline std::size_t
-skip_whitespaces(char const* content, std::size_t size, std::size_t cur_pos) {
-  auto const* const it = boost::algorithm::find_if_not(
-      content + cur_pos, content + size, utils::isspace_s);
-  return static_cast<std::size_t>(std::distance(content, it));
-}
-#endif
-
-[[nodiscard]] inline boost::optional<char>
-peek_next_char(char const* content, std::size_t size, std::size_t cur_pos) {
-  if (cur_pos == size) {
+[[nodiscard]] inline boost::optional<char> peek_nth_char(char const* content,
+                                                         std::size_t size,
+                                                         std::size_t cur_pos,
+                                                         std::size_t nth) {
+  if (cur_pos + nth >= size) {
     return boost::none;
   }
-  return content[cur_pos];
+  return content[cur_pos + nth];
+}
+
+[[nodiscard]] inline boost::optional<char>
+peek_cur_char(char const* content, std::size_t size, std::size_t cur_pos) {
+  return peek_nth_char(content, size, cur_pos, 0);
+}
+
+[[nodiscard]] inline bool try_match_nth_char(char const* content,
+                                             std::size_t size,
+                                             std::size_t cur_pos,
+                                             std::size_t nth, char expected) {
+  if (auto const pc = peek_nth_char(content, size, cur_pos, nth); pc) {
+    return *pc == expected;
+  }
+  return false;
 }
 
 [[nodiscard]] inline boost::string_view
@@ -229,97 +238,57 @@ template <reader_concept T>
     return ident.size();
   };
 
+  static auto const single_char_to_token_map =
+      boost::unordered_map<char, symbol_t>{
+          {';', symbol_t::semicolon}, {',', symbol_t::comma},
+          {'(', symbol_t::lparen},    {')', symbol_t::rparen},
+          {'*', symbol_t::times},     {'/', symbol_t::divide},
+          {'+', symbol_t::plus},      {'-', symbol_t::minus},
+          {'=', symbol_t::equal},     {'#', symbol_t::not_equal},
+          {'?', symbol_t::in},        {'!', symbol_t::out},
+          {'.', symbol_t::period},
+      };
+
   std::size_t cur_pos = 0;
-  while (auto const pc = peek_next_char(content, size, cur_pos)) {
+  while (auto const pc = peek_cur_char(content, size, cur_pos)) {
     if (!pc.has_value()) {
       break;
     }
     char const c = *pc;
-    switch (c) {
-    case ';':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::semicolon);
-      break;
-    case ',':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::comma);
-      break;
-    case '(':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::lparen);
-      break;
-    case ')':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::rparen);
-      break;
-    case '*':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::times);
-      break;
-    case '/':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::divide);
-      break;
-    case '+':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::plus);
-      break;
-    case '-':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::minus);
-      break;
-    case '=':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::equal);
-      break;
-    case '#':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::not_equal);
-      break;
-    case '?':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::in);
-      break;
-    case '!':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::out);
-      break;
-    case '.':
-      cur_pos += add_single_char_token(cur_pos, symbol_t::period);
-      break;
-    case '<': {
-      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
-          nc.has_value() && *nc == '=') {
+    if (auto const it = single_char_to_token_map.find(c);
+        it != single_char_to_token_map.cend()) {
+      cur_pos += add_single_char_token(cur_pos, it->second);
+    } else if (c == '<') {
+      if (try_match_nth_char(content, size, cur_pos, 1, '=')) {
         cur_pos += add_two_chars_token(cur_pos, symbol_t::less_equal);
       } else {
         cur_pos += add_single_char_token(cur_pos, symbol_t::less);
       }
-      break;
-    }
-    case '>': {
-      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
-          nc.has_value() && *nc == '=') {
+    } else if (c == '>') {
+      if (try_match_nth_char(content, size, cur_pos, 1, '=')) {
         cur_pos += add_two_chars_token(cur_pos, symbol_t::greater_equal);
       } else {
         cur_pos += add_single_char_token(cur_pos, symbol_t::greater);
       }
       break;
-    }
-    case ':': {
-      if (auto const nc = peek_next_char(content, size, cur_pos + 1);
-          nc.has_value() && *nc == '=') {
+    } else if (c == ':') {
+      if (try_match_nth_char(content, size, cur_pos, 1, '=')) {
         cur_pos += add_two_chars_token(cur_pos, symbol_t::becomes);
       } else {
         fmt::print("unexpected char '{}', should it be ':='?\n", c);
         __builtin_unreachable();
       }
-      break;
-    }
-    case '0' ... '9': {
+    } else if (utils::isdigit_s(c)) {
       auto const num = get_number(content, size, cur_pos);
       cur_pos += add_number_token(cur_pos, num);
-      break;
-    }
-    case 'a' ... 'z':
-    case 'A' ... 'Z': {
+    } else if (utils::isalpha_s(c)) {
       auto const ident = get_identifier(content, size, cur_pos);
       cur_pos += add_ident_or_keyword_token(cur_pos, ident);
-      break;
-    }
-    default:
+    } else {
       if (!utils::isspace_s(c)) {
         fmt::print("unknown char '{}'\n", c);
       }
       ++cur_pos;
-      break;
     }
   }
   return tokens;
