@@ -87,8 +87,10 @@ lex_result_t lex(source_cursor_t cursor) {
       if (try_match_next_char(cursor, '=')) {
         cursor = add_n_chars_token(cursor, symbol_t::becomes, 2U);
       } else {
-        // std::cerr << "unexpected char '" << c << "', should it be ':='?\n";
-        __builtin_unreachable();
+        return lex_error_unexpected_char_t{
+            .annotation = annotation_t{.start = cursor.cur_iter(), .length = 2U},
+            .expected = ":=",
+        };
       }
     } else if (utils::chars::isdigit_s(c)) {
       auto const num = cursor.get_number();
@@ -98,7 +100,7 @@ lex_result_t lex(source_cursor_t cursor) {
       cursor = add_ident_or_keyword_token(cursor, ident);
     } else {
       if (!utils::chars::isspace_s(c)) {
-        // fmt::print("unknown char '{}'\n", c);
+        return lex_unknown_char_t{.annotation = annotation_t{.start = cursor.cur_iter(), .length = 1U}};
       }
       cursor = cursor.advance(source_nth_t(1U));
     }
