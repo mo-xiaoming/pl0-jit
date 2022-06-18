@@ -1,19 +1,16 @@
-find_package(fmt REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(mio REQUIRED)
-
-add_library(pl0-jit INTERFACE)
-target_include_directories(pl0-jit INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+add_library(pl0-jit-lib lexer.cpp)
+target_link_libraries(pl0-jit-lib PUBLIC project_defaults)
+install(TARGETS pl0-jit-lib EXPORT pl0-jit-lib-Targets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 add_executable(pl0-jit-test lexer_test.cpp)
-target_link_libraries(pl0-jit-test PRIVATE project_defaults GTest::gtest GTest::gtest_main mio::mio Boost::filesystem fmt::fmt)
+target_link_libraries(pl0-jit-test PRIVATE pl0-jit-lib GTest::gtest GTest::gtest_main)
 gtest_discover_tests(pl0-jit-test)
+install(TARGETS pl0-jit-test EXPORT pl0-jit-test-Targets
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-add_executable(pl-0 main.cpp)
-target_link_libraries(pl-0 PRIVATE project_defaults fmt::fmt)
-target_compile_definitions(pl-0 PRIVATE FMT_ENFORCE_COMPILE_STRING)
-
+add_executable(pl0-jit main.cpp)
+target_link_libraries(pl0-jit PRIVATE project_defaults pl0-jit-lib)
 install(TARGETS pl0-jit EXPORT pl0-jit-Targets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

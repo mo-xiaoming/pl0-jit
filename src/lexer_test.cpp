@@ -1,48 +1,40 @@
-#include "annotation.hpp"
 #include "lexer.hpp"
-
-#include <boost/filesystem/operations.hpp>
-#include <boost/filesystem/path.hpp>
-#include <boost/system/is_error_code_enum.hpp>
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 namespace {
-[[nodiscard]] boost::optional<boost::filesystem::path> get_unique_path() {
-  auto e = boost::system::error_code();
-  if (auto const tmp_dir = boost::filesystem::temp_directory_path(e); !e) {
-    return tmp_dir / boost::filesystem::unique_path();
-  }
-  return boost::none;
+std::string const& get_mock_source_path() {
+  static auto const mock_source_path = std::string("hopefully_this_does_not_exist");
+  return mock_source_path;
 }
 
-constexpr auto mock_source_path = boost::string_view();
-
-[[nodiscard]] lexer::lex_result_t lex(boost::string_view content) {
-  return lexer::detail::lex(mock_source_path,
-                            [content](auto) -> lexer::detail::read_result_t {
-                              return std::pair(content.data(), content.size());
-                            });
+lexer::lex_result_t lex_string(std::string_view content) {
+  auto const cursor = lexer::internal::source_cursor_t(lexer::internal::source_content_t(content.data()),
+                                                       lexer::internal::source_size_t(content.size()),
+                                                       lexer::internal::source_position_t(0U));
+  return lexer::internal::lex(cursor);
 }
 } // namespace
 
 // NOLINTNEXTLINE
 TEST(LexerTestSuite, NonExistSourceFileShouldReturnFileUnreadableError) {
-  auto const tmp_path = get_unique_path();
-  ASSERT_TRUE(tmp_path.has_value());
+  auto const& mock_source_path = get_mock_source_path();
 
-  auto const path = tmp_path->string();
+  auto err = std::error_code();
+  auto const exists = std::filesystem::exists(mock_source_path, err);
+  ASSERT_TRUE(!exists && !err) << "exists: " << exists << ", err: " << err.message();
 
-  auto const ret = lexer::lex(path);
-  auto const* const error =
-      boost::variant2::get_if<lexer::lex_error_file_unreadable_t>(&ret);
+  auto const ret = lexer::lex_source_file(mock_source_path);
+  auto const* const error = std::get_if<lexer::lex_error_file_unreadable_t>(&ret);
   ASSERT_NE(error, nullptr);
-  ASSERT_EQ(error->path, path);
+  ASSERT_EQ(error->source_path, mock_source_path);
 }
 
 // NOLINTNEXTLINE
 TEST(LexerTestSuite, Normal) {
-  auto const ret = lex(R"(var x, squ;
+  auto const ret = lex_string(R"(var x, squ;
 
 procedure square;
 begin
@@ -82,7 +74,7 @@ end.
       lexer::symbol_t::period     // .
   };
 
-  auto const* const tokens = boost::variant2::get_if<lexer::tokens_t>(&ret);
+  auto const* const tokens = std::get_if<lexer::tokens_t>(&ret);
   ASSERT_NE(tokens, nullptr);
   ASSERT_EQ(tokens->size(), tokens_oracle.size());
   for (std::size_t i = 0; i != tokens_oracle.size(); ++i) {

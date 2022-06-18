@@ -2,17 +2,11 @@
 #define PL0_LEXER_HPP__
 
 #include "annotation.hpp"
-#include "utils.hpp"
+#include "utils/chars.hpp"
+#include "utils/static_map.hpp"
 
-#include <boost/algorithm/cxx11/find_if_not.hpp>
-#include <boost/none.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/unordered/unordered_map.hpp>
-#include <boost/utility/string_view.hpp>
-#include <boost/variant2/variant.hpp>
-#include <fmt/core.h>
-#include <mio/mmap.hpp>
-
+#include <optional>
+#include <variant>
 #include <vector>
 
 namespace lexer {
@@ -50,10 +44,10 @@ enum class symbol_t {
   period,
 };
 
-[[nodiscard]] constexpr boost::string_view stringify_symbol(symbol_t sym) noexcept {
+[[nodiscard]] constexpr std::string_view stringify_symbol(symbol_t sym) noexcept {
   using enum symbol_t;
   // NOLINTNEXTLINE
-  constexpr boost::string_view strings[] = {
+  constexpr std::string_view strings[] = {
       // NOLINTNEXTLINE
       [static_cast<std::size_t>(ident)] = "identifier",
       [static_cast<std::size_t>(semicolon)] = ";",
@@ -92,173 +86,113 @@ enum class symbol_t {
 
 inline std::ostream& operator<<(std::ostream& os, symbol_t sym) { return os << stringify_symbol(sym); }
 
-namespace detail {
-using read_result_t = boost::optional<std::pair<char const*, std::size_t>>;
-
-[[nodiscard]] inline read_result_t read(boost::string_view path) noexcept {
-  auto error = std::error_code();
-  if (auto const input = mio::make_mmap_source(path, error); !error) {
-    return std::pair(input.data(), input.size());
-  }
-  return boost::none;
-}
-
-template <typename T>
-concept reader_concept = requires(T reader) {
-  { reader(boost::string_view()) } -> std::same_as<detail::read_result_t>;
-};
-} // namespace detail
-
 struct token_t {
   annotation_t annotation;
   symbol_t symbol;
 };
 
-struct lex_error_file_unreadable_t {
-  boost::string_view path;
-};
-struct lex_error_missing_ending_period_t {
-  boost::string_view path;
-};
 using tokens_t = std::vector<token_t>;
-using lex_result_t = boost::variant2::variant<tokens_t, lex_error_file_unreadable_t>;
+struct lex_error_file_unreadable_t {
+  std::string source_path;
+};
+using lex_result_t = std::variant<tokens_t, lex_error_file_unreadable_t>;
 
-namespace detail {
-struct cursor_t {
-  char const* content;
-  std::size_t size;
-  std::size_t cur_pos;
+namespace internal {
+template <typename T>
+concept small_pod = sizeof(T) < 16;
+
+template <small_pod InternalType, typename Tag> struct strong_type_t {
+  using base_t = strong_type_t<InternalType, Tag>;
+
+  constexpr explicit strong_type_t(InternalType value) noexcept : m_value(value) {}
+
+  constexpr InternalType value() const noexcept { return m_value; }
+
+private:
+  InternalType m_value;
 };
 
-[[nodiscard]] inline boost::optional<char> peek_nth_char(cursor_t const& cursor, std::size_t nth) {
-  if (cursor.cur_pos + nth >= cursor.size) {
-    return boost::none;
+struct source_nth_t : strong_type_t<std::size_t, struct source_nth_t_tag> {
+  using base_t::base_t;
+};
+struct source_position_t : strong_type_t<std::size_t, struct source_position_t_tag> {
+  using base_t::base_t;
+};
+struct source_size_t : strong_type_t<std::size_t, struct source_size_t_tag> {
+  using base_t::base_t;
+};
+struct source_content_t : strong_type_t<char const*, struct source_content_t_tag> {
+  using base_t::base_t;
+};
+
+[[nodiscard]] constexpr std::optional<symbol_t> find_keyword(std::string_view ident) noexcept {
+  using namespace std::literals::string_view_literals;
+  constexpr auto keywords_map = utils::container::make_static_map(std::array{
+      std::pair("call"sv, symbol_t::call),
+      std::pair("odd"sv, symbol_t::odd),
+      std::pair("begin"sv, symbol_t::begin),
+      std::pair("end"sv, symbol_t::end),
+      std::pair("if"sv, symbol_t::if_),
+      std::pair("while"sv, symbol_t::while_),
+      std::pair("then"sv, symbol_t::then),
+      std::pair("do"sv, symbol_t::do_),
+      std::pair("const"sv, symbol_t::const_),
+      std::pair("var"sv, symbol_t::var),
+      std::pair("procedure"sv, symbol_t::proc),
+  });
+  return keywords_map.find(ident);
+}
+
+struct source_cursor_t {
+  constexpr source_cursor_t(source_content_t content, source_size_t size, source_position_t cur_pos) noexcept
+      : m_content(content), m_size(size), m_cur_pos(cur_pos) {}
+
+  using const_iterator = char const*;
+  using iterator = const_iterator;
+
+  [[nodiscard]] constexpr const_iterator begin() const noexcept { return m_content.value(); }
+  [[nodiscard]] constexpr const_iterator end() const noexcept { return m_content.value() + m_size.value(); }
+  [[nodiscard]] constexpr const_iterator cbegin() const noexcept { return m_content.value(); }
+  [[nodiscard]] constexpr const_iterator cend() const noexcept { return m_content.value() + m_size.value(); }
+  [[nodiscard]] constexpr const_iterator cur_iter() const noexcept { return m_content.value() + m_cur_pos.value(); }
+  [[nodiscard]] constexpr const_iterator next_nth_iter(source_nth_t nth) const noexcept {
+    return m_content.value() + m_cur_pos.value() + nth.value();
   }
-  return cursor.content[cursor.cur_pos + nth];
-}
 
-[[nodiscard]] inline boost::optional<char> peek_cur_char(cursor_t const& cursor) { return peek_nth_char(cursor, 0); }
-
-// TODO(mx): need strong type
-[[nodiscard]] inline bool try_match_nth_char(cursor_t const& cursor, std::size_t nth, char expected) {
-  if (auto const pc = peek_nth_char(cursor, nth); pc) {
-    return *pc == expected;
-  }
-  return false;
-}
-
-[[nodiscard]] inline boost::string_view get_number(cursor_t const& cursor) {
-  auto const* const it =
-      boost::algorithm::find_if_not(cursor.content + cursor.cur_pos, cursor.content + cursor.size, utils::isdigit_s);
-  return {cursor.content + cursor.cur_pos, static_cast<std::size_t>(it - (cursor.content + cursor.cur_pos))};
-}
-
-[[nodiscard]] inline boost::optional<symbol_t> try_match_keyword(boost::string_view ident) {
-  static auto const keywords = boost::unordered_map<boost::string_view, symbol_t>{
-      {"call", symbol_t::call},    {"odd", symbol_t::odd},      {"begin", symbol_t::begin},    {"end", symbol_t::end},
-      {"if", symbol_t::if_},       {"while", symbol_t::while_}, {"then", symbol_t::then},      {"do", symbol_t::do_},
-      {"const", symbol_t::const_}, {"var", symbol_t::var},      {"procedure", symbol_t::proc},
-  };
-  if (auto const it = keywords.find(ident); it != keywords.cend()) {
-    return it->second;
-  }
-  return boost::none;
-}
-
-[[nodiscard]] inline boost::string_view get_identifier(cursor_t const& cursor) {
-  auto const* const it =
-      boost::algorithm::find_if_not(cursor.content + cursor.cur_pos, cursor.content + cursor.size, utils::isident_s);
-  return {cursor.content + cursor.cur_pos, static_cast<std::size_t>(it - (cursor.content + cursor.cur_pos))};
-}
-
-template <reader_concept T> [[nodiscard]] lex_result_t lex(boost::string_view path, T&& reader) {
-  auto const possible_ret = std::forward<T>(reader)(path);
-  if (!possible_ret.has_value()) {
-    return lex_error_file_unreadable_t{path};
-  }
-
-  auto const [content, size] = *possible_ret;
-
-  auto tokens = tokens_t();
-
-  auto const add_single_char_token = [&tokens, content = content](std::size_t cur_pos, auto sym) -> std::size_t {
-    tokens.emplace_back(annotation_t{&content[cur_pos], 1}, sym);
-    return 1U;
-  };
-  auto const add_two_chars_token = [&tokens, content = content](std::size_t cur_pos, auto sym) -> std::size_t {
-    tokens.emplace_back(annotation_t{&content[cur_pos], 2}, sym);
-    return 2U;
-  };
-  auto const add_number_token = [&tokens, content = content](std::size_t cur_pos,
-                                                             boost::string_view num) -> std::size_t {
-    tokens.emplace_back(annotation_t{&content[cur_pos], num.size()}, symbol_t::number);
-    return num.size();
-  };
-  auto const add_ident_or_keyword_token = [&tokens, content = content](std::size_t cur_pos,
-                                                                       boost::string_view ident) -> std::size_t {
-    auto const sym = [ident] {
-      if (auto const possible_keyword = try_match_keyword(ident); possible_keyword) {
-        return *possible_keyword;
-      }
-      return symbol_t::ident;
-    }();
-    tokens.emplace_back(annotation_t{&content[cur_pos], ident.size()}, sym);
-    return ident.size();
-  };
-
-  static auto const single_char_to_token_map = boost::unordered_map<char, symbol_t>{
-      {';', symbol_t::semicolon}, {',', symbol_t::comma},     {'(', symbol_t::lparen}, {')', symbol_t::rparen},
-      {'*', symbol_t::times},     {'/', symbol_t::divide},    {'+', symbol_t::plus},   {'-', symbol_t::minus},
-      {'=', symbol_t::equal},     {'#', symbol_t::not_equal}, {'?', symbol_t::in},     {'!', symbol_t::out},
-      {'.', symbol_t::period},
-  };
-
-  cursor_t cursor{.content = content, .size = size, .cur_pos = 0};
-  while (auto const pc = peek_cur_char(cursor)) {
-    if (!pc.has_value()) {
-      break;
+  [[nodiscard]] constexpr std::optional<char> peek_next_nth_char(source_nth_t nth) const noexcept {
+    auto const* const nth_iter = next_nth_iter(nth);
+    if (nth_iter >= cend()) {
+      return std::nullopt;
     }
-    char const c = *pc;
-    if (auto const it = single_char_to_token_map.find(c); it != single_char_to_token_map.cend()) {
-      cursor.cur_pos += add_single_char_token(cursor.cur_pos, it->second);
-    } else if (c == '<') {
-      if (try_match_nth_char(cursor, 1, '=')) {
-        cursor.cur_pos += add_two_chars_token(cursor.cur_pos, symbol_t::less_equal);
-      } else {
-        cursor.cur_pos += add_single_char_token(cursor.cur_pos, symbol_t::less);
-      }
-    } else if (c == '>') {
-      if (try_match_nth_char(cursor, 1, '=')) {
-        cursor.cur_pos += add_two_chars_token(cursor.cur_pos, symbol_t::greater_equal);
-      } else {
-        cursor.cur_pos += add_single_char_token(cursor.cur_pos, symbol_t::greater);
-      }
-      break;
-    } else if (c == ':') {
-      if (try_match_nth_char(cursor, 1, '=')) {
-        cursor.cur_pos += add_two_chars_token(cursor.cur_pos, symbol_t::becomes);
-      } else {
-        fmt::print("unexpected char '{}', should it be ':='?\n", c);
-        __builtin_unreachable();
-      }
-    } else if (utils::isdigit_s(c)) {
-      auto const num = get_number(cursor);
-      cursor.cur_pos += add_number_token(cursor.cur_pos, num);
-    } else if (utils::isalpha_s(c)) {
-      auto const ident = get_identifier(cursor);
-      cursor.cur_pos += add_ident_or_keyword_token(cursor.cur_pos, ident);
-    } else {
-      if (!utils::isspace_s(c)) {
-        fmt::print("unknown char '{}'\n", c);
-      }
-      ++cursor.cur_pos;
-    }
+    return *nth_iter;
   }
-  return tokens;
-}
-} // namespace detail
+  [[nodiscard]] constexpr std::optional<char> peek_cur_char() const noexcept {
+    return peek_next_nth_char(source_nth_t(0U));
+  }
+  [[nodiscard]] constexpr std::string_view get_number() const noexcept {
+    const_iterator it = std::find_if_not(cur_iter(), end(), utils::chars::isdigit_s);
+    return {cur_iter(), it};
+  }
+  [[nodiscard]] constexpr std::string_view get_identifier() const noexcept {
+    const_iterator it = std::find_if_not(cur_iter(), cend(), utils::chars::isident_s);
+    return {cur_iter(), it};
+  }
+  [[nodiscard]] constexpr source_cursor_t advance(source_nth_t nth) const noexcept {
+    auto cursor = *this;
+    cursor.m_cur_pos = source_position_t(m_cur_pos.value() + nth.value());
+    return cursor;
+  }
 
-[[nodiscard]] inline lex_result_t lex(std::string const& path) { return detail::lex(path, detail::read); }
+private:
+  source_content_t m_content;
+  source_size_t m_size;
+  source_position_t m_cur_pos;
+};
+
+[[nodiscard]] lex_result_t lex(source_cursor_t cursor);
+} // namespace internal
+
+lex_result_t lex_source_file(std::string const& source_path);
 } // namespace lexer
 
 #endif

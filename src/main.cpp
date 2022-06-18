@@ -1,5 +1,1 @@
-#include <fmt/core.h>
-
-int main() {
-  fmt::print("hello world\n");
-}
+int main() {}
