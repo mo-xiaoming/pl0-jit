@@ -30,7 +30,7 @@ lex_result_t lex(source_cursor_t cursor) {
   auto tokens = tokens_t();
 
   auto const add_n_chars_token = [&tokens](source_cursor_t const& csr, symbol_t sym, std::size_t n) {
-    tokens.emplace_back(annotation_t{csr.cur_iter(), n}, sym);
+    tokens.emplace_back(sym, annotation_t{csr.cur_iter(), n});
     return csr.advance(source_nth_t(n));
   };
   auto const add_ident_or_keyword_token = [&add_n_chars_token](source_cursor_t const& csr, std::string_view ident) {
@@ -87,7 +87,7 @@ lex_result_t lex(source_cursor_t cursor) {
       if (try_match_next_char(cursor, '=')) {
         cursor = add_n_chars_token(cursor, symbol_t::becomes, 2U);
       } else {
-        return lex_error_unexpected_char_t{
+        return lex_unexpected_char_t{
             .annotation = annotation_t{.start = cursor.cur_iter(), .length = 2U},
             .expected = ":=",
         };

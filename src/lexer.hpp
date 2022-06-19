@@ -87,23 +87,27 @@ enum class symbol_t {
 inline std::ostream& operator<<(std::ostream& os, symbol_t sym) { return os << stringify_symbol(sym); }
 
 struct token_t {
-  annotation_t annotation;
   symbol_t symbol;
+  annotation_t annotation;
+
+  [[nodiscard]] friend constexpr bool operator==(token_t const& lhs, token_t const& rhs) noexcept = default;
+  friend std::ostream& operator<<(std::ostream& os, token_t const& v) {
+    return os << "tokens_t{ .symbol_t=" << v.symbol << ", .annotation_t=" << v.annotation << " }";
+  }
 };
 
 using tokens_t = std::vector<token_t>;
 struct lex_error_file_unreadable_t {
   std::string source_path;
 };
-struct lex_error_unexpected_char_t {
+struct lex_unexpected_char_t {
   annotation_t annotation;
   std::string_view expected;
 };
 struct lex_unknown_char_t {
   annotation_t annotation;
 };
-using lex_result_t =
-    std::variant<tokens_t, lex_error_unexpected_char_t, lex_unknown_char_t, lex_error_file_unreadable_t>;
+using lex_result_t = std::variant<tokens_t, lex_unexpected_char_t, lex_unknown_char_t, lex_error_file_unreadable_t>;
 
 namespace internal {
 template <typename T>
