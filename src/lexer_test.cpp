@@ -1,32 +1,10 @@
+#include "annotation.hpp"
 #include "lexer.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-#if 0
-namespace lexer {
-void PrintTo(tokens_t const& tokens, std::ostream* os) {
-  for (tokens_t::size_type i = 0U; i != tokens.size(); ++i) {
-    *os << std::setw(4) << i << ' ' << tokens[i] << '\n';
-  }
-}
-std::ostream& operator<<(std::ostream& os, tokens_t const& tokens) {
-  for (tokens_t::size_type i = 0U; i != tokens.size(); ++i) {
-    os << std::setw(4) << i << ' ' << tokens[i] << '\n';
-  }
-  return os;
-}
-} // namespace lexer
-#endif
-#if 0
-template <auto N> std::ostream& operator<<(std::ostream& os, std::array<lexer::symbol_t, N> const& tokens) {
-  for (typename std::decay_t<decltype(tokens)>::size_type i = 0U; i != tokens.size(); ++i) {
-    os << std::setw(4) << i << ' ' << tokens[i] << '\n';
-  }
-  return os;
-}
-#endif
 namespace {
 std::string const& get_mock_source_path() {
   static auto const mock_source_path = std::string("hopefully_this_does_not_exist");
@@ -53,6 +31,25 @@ TEST(LexerTestSuite, NonExistSourceFileShouldReturnFileUnreadableError) {
   auto const* const error = std::get_if<lexer::lex_error_file_unreadable_t>(&ret);
   ASSERT_NE(error, nullptr);
   ASSERT_EQ(error->source_path, mock_source_path);
+}
+
+// NOLINTNEXTLINE
+TEST(LexerTestSuite, IncompleteBecomes) {
+  auto const content = std::string_view(R"(a : b;)");
+  auto const ret = lex_string(content);
+  auto const* const error = std::get_if<lexer::lex_unexpected_char_t>(&ret);
+  ASSERT_NE(error, nullptr);
+  EXPECT_EQ(error->expected, ":=");
+  EXPECT_EQ(error->annotation, (annotation_t{.start = content.data() + 2, .length = 2U}));
+}
+
+// NOLINTNEXTLINE
+TEST(LexerTestSuite, UnrecognizedChar) {
+  auto const content = std::string_view(R"(a@ : b;)");
+  auto const ret = lex_string(content);
+  auto const* const error = std::get_if<lexer::lex_unknown_char_t>(&ret);
+  ASSERT_NE(error, nullptr);
+  EXPECT_EQ(error->annotation, (annotation_t{.start = content.data() + 1, .length = 1U}));
 }
 
 // NOLINTNEXTLINE
