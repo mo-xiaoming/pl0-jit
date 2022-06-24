@@ -1,5 +1,5 @@
-#include "annotation.hpp"
 #include "lexer.hpp"
+#include "utils_for_test.hpp"
 
 #include <gtest/gtest.h>
 
@@ -9,13 +9,6 @@ namespace {
 std::string const& get_mock_source_path() {
   static auto const mock_source_path = std::string("hopefully_this_does_not_exist");
   return mock_source_path;
-}
-
-lexer::lex_result_t lex_string(std::string_view content) {
-  auto const cursor = lexer::internal::source_cursor_t(lexer::internal::source_content_t(content.data()),
-                                                       lexer::internal::source_size_t(content.size()),
-                                                       lexer::internal::source_position_t(0U));
-  return lexer::internal::lex(cursor);
 }
 } // namespace
 

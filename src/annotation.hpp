@@ -7,6 +7,8 @@ struct annotation_t {
   char const* start;
   std::size_t length;
 
+  [[nodiscard]] constexpr std::string_view to_sv() const noexcept { return {start, start + length}; }
+
   [[nodiscard]] friend constexpr bool operator==(annotation_t const& lhs, annotation_t const& rhs) noexcept = default;
 
   friend std::ostream& operator<<(std::ostream& os, annotation_t const& v) {

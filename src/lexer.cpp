@@ -11,12 +11,9 @@ lex_result_t lex_source_file(std::string const& source_path) {
   if (!file) {
     return err_fn();
   }
-  file.seekg(0, std::ios::end);
-  auto const size = file.tellg();
-  file.seekg(0, std::ios::beg);
 
-  std::vector<char> buffer(static_cast<std::size_t>(size));
-  if (file.read(buffer.data(), size)) {
+  std::vector<char> buffer(static_cast<std::size_t>(file.seekg(0, std::ios::end).tellg()));
+  if (file.seekg(0, std::ios::beg).read(buffer.data(), static_cast<std::streamsize>(buffer.size()))) {
     auto const cursor =
         internal::source_cursor_t(internal::source_content_t(buffer.data()), internal::source_size_t(buffer.size()),
                                   internal::source_position_t(0U));
