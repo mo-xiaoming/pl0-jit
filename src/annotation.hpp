@@ -12,7 +12,7 @@ struct annotation_t {
   [[nodiscard]] friend constexpr bool operator==(annotation_t const& lhs, annotation_t const& rhs) noexcept = default;
 
   friend std::ostream& operator<<(std::ostream& os, annotation_t const& v) {
-    return os << "annotation_t{ .start=" << static_cast<void const*>(v.start) << ", .length=" << v.length << " }";
+    return os << "{ .start=" << static_cast<void const*>(v.start) << ", .length=" << v.length << " }";
   }
 };
 

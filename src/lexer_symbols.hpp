@@ -89,7 +89,7 @@ struct token_t {
 
   [[nodiscard]] friend constexpr bool operator==(token_t const& lhs, token_t const& rhs) noexcept = default;
   friend std::ostream& operator<<(std::ostream& os, token_t const& v) {
-    return os << "tokens_t{ .symbol_t=" << v.symbol << ", .annotation_t=" << v.annotation << " }";
+    return os << "{ .symbol_t=" << v.symbol << ", .annotation_t=" << v.annotation << " }";
   }
 };
 
