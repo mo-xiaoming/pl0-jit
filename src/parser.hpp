@@ -53,29 +53,33 @@ template <typename T, typename... Ts> void error(T&& v, Ts&&... vs) {
   std::exit(1);
 }
 
+template <typename T, typename... Ts> void info(T&& v, Ts&&... vs) {
+  std::cout << utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)...) << '\n';
+}
+
 struct statement_t {
   virtual ~statement_t() = default;
 
   virtual void print() const = 0;
 };
 
+[[nodiscard]] inline constexpr std::string_view sv(lexer::token_t const& token) noexcept {
+  return {token.annotation.start, token.annotation.start + token.annotation.length};
+}
+
 struct in_t : statement_t {
   explicit in_t(lexer::token_t const& ident) : m_ident(ident) {}
 
-  void print() const override { std::cout << utils::str::to_str("?", m_ident); }
+  void print() const override { info("?", sv(m_ident)); }
 
 private:
   lexer::token_t m_ident;
 };
 
-[[nodiscard]] inline constexpr std::string_view sv(lexer::token_t const& token) noexcept {
-  return {token.annotation.start, token.annotation.start + token.annotation.length};
-}
-
 struct const_t {
   const_t(lexer::token_t const& ident, lexer::token_t const& num) : m_ident(ident), m_num(num) {}
 
-  void print() const { std::cout << utils::str::to_str("const ", sv(m_ident), " = ", sv(m_num)) << '\n'; }
+  void print() const { info("const ", sv(m_ident), " = ", sv(m_num)); }
 
 private:
   lexer::token_t m_ident;
@@ -124,16 +128,16 @@ private:
     return m_tokens[m_cur_pos];
   }
 
-  [[nodiscard]] bool try_with(lexer::symbol_t s) {
+  [[nodiscard]] bool try_with(lexer::symbol_t s) const noexcept {
     auto const ct = cur_token();
     return ct && ct->symbol == s;
   }
 
-  void must_be(lexer::symbol_t s) {
+  void must_be(lexer::symbol_t s) const noexcept {
     if (!try_with(s)) {
       auto const ct = cur_token();
       if (ct.has_value()) {
-        internal::error(utils::str::to_str("expected '", s, "', got '", *ct, " at somewhere"));
+        internal::error(utils::str::to_str("expected '", s, "', got '", internal::sv(*ct), " at somewhere"));
       } else {
         internal::error(utils::str::to_str("expected '", s, "', incomplete file"));
       }
@@ -181,7 +185,24 @@ private:
     }
   }
 
-  void parse_top_level_statements() {}
+  internal::in_t parse_top_level_in() {
+    next();
+
+    must_be(lexer::symbol_t::ident);
+    auto const id = *cur_token();
+
+    next();
+
+    return internal::in_t{id};
+  }
+
+  void parse_top_level_statements() {
+    while (!try_with(lexer::symbol_t::period)) {
+      if (try_with(lexer::symbol_t::in)) {
+        m_program.statements.push_back(std::make_unique<internal::in_t>(parse_top_level_in()));
+      }
+    }
+  }
 
   lexer::tokens_t m_tokens;
   internal::program_t m_program;
