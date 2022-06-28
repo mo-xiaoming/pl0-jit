@@ -86,14 +86,27 @@ private:
   lexer::token_t m_num;
 };
 
+struct var_t {
+  explicit var_t(lexer::token_t const& ident) : m_ident(ident) {}
+
+  void print() const { info("var ", sv(m_ident)); }
+
+private:
+  lexer::token_t m_ident;
+};
+
 struct program_t {
   std::vector<const_t> consts;
+  std::vector<var_t> vars;
   std::vector<std::unique_ptr<statement_t>> statements;
 };
 
 inline void print(program_t const& program) {
   for (auto const& c : program.consts) {
     c.print();
+  }
+  for (auto const& v : program.vars) {
+    v.print();
   }
   for (auto const& s : program.statements) {
     s->print();
@@ -151,6 +164,7 @@ private:
 
   void parse_top_block() {
     parse_top_level_consts();
+    parse_top_level_vars();
     parse_top_level_statements();
   }
 
@@ -177,6 +191,30 @@ private:
       if (try_with(lexer::symbol_t::semicolon)) {
         next();
         if (!try_with(lexer::symbol_t::const_)) {
+          return;
+        }
+      } else {
+        must_be(lexer::symbol_t::comma);
+      }
+    }
+  }
+
+  void parse_top_level_vars() {
+    if (!try_with(lexer::symbol_t::var)) {
+      return;
+    }
+
+    while (true) {
+      next();
+      must_be(lexer::symbol_t::ident);
+      auto const id = *cur_token();
+
+      m_program.vars.emplace_back(id);
+
+      next();
+      if (try_with(lexer::symbol_t::semicolon)) {
+        next();
+        if (!try_with(lexer::symbol_t::var)) {
           return;
         }
       } else {

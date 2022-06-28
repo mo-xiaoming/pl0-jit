@@ -23,7 +23,10 @@ TEST(ParserTestSuite, Const) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
 const a = 3;
 const b = 4, c = 5;
+var e, f;
+var g;
 ?a
+?c
 .
   )"));
 
