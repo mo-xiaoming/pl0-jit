@@ -67,6 +67,15 @@ struct statement_t {
   return {token.annotation.start, token.annotation.start + token.annotation.length};
 }
 
+struct call_t : statement_t {
+  explicit call_t(lexer::token_t const& ident) : m_ident(ident) {}
+
+  void print() const override { info("call ", sv(m_ident)); }
+
+private:
+  lexer::token_t m_ident;
+};
+
 struct in_t : statement_t {
   explicit in_t(lexer::token_t const& ident) : m_ident(ident) {}
 
@@ -234,10 +243,24 @@ private:
     return internal::in_t{id};
   }
 
+  internal::call_t parse_top_level_call() {
+    next();
+
+    must_be(lexer::symbol_t::ident);
+    auto const id = *cur_token();
+
+    next();
+
+    return internal::call_t{id};
+  }
+
   void parse_top_level_statements() {
     while (!try_with(lexer::symbol_t::period)) {
       if (try_with(lexer::symbol_t::in)) {
         m_program.statements.push_back(std::make_unique<internal::in_t>(parse_top_level_in()));
+      }
+      if (try_with(lexer::symbol_t::call)) {
+        m_program.statements.push_back(std::make_unique<internal::call_t>(parse_top_level_call()));
       }
     }
   }

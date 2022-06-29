@@ -27,6 +27,7 @@ var e, f;
 var g;
 ?a
 ?c
+call b
 .
   )"));
 
