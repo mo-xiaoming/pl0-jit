@@ -35,7 +35,9 @@ factor =
 #include "lexer_symbols.hpp"
 #include "utils/strings.hpp"
 
+#include <cassert>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -58,6 +60,11 @@ template <typename T, typename... Ts> [[nodiscard]] std::string info_str(T&& v, 
 }
 
 struct statement_t {
+  statement_t() = default;
+  statement_t(statement_t const&) = default;
+  statement_t(statement_t&&) noexcept = default;
+  statement_t& operator=(statement_t const&) & = default;
+  statement_t& operator=(statement_t&&) & noexcept = default;
   virtual ~statement_t() = default;
 
   [[nodiscard]] virtual std::string to_string() const = 0;
@@ -68,9 +75,14 @@ struct statement_t {
 }
 
 struct expression_t {
+  expression_t() = default;
+  expression_t(expression_t const&) = default;
+  expression_t(expression_t&&) noexcept = default;
+  expression_t& operator=(expression_t const&) & = default;
+  expression_t& operator=(expression_t&&) & noexcept = default;
   virtual ~expression_t() = default;
 
-  virtual std::string to_string() const = 0;
+  [[nodiscard]] virtual std::string to_string() const = 0;
 };
 
 struct expression_primary_t : expression_t {};
@@ -326,14 +338,20 @@ private:
   }
 
   std::unique_ptr<internal::expression_t> parse_expression() {
+    std::vector<std::unique_ptr<internal::expression_t>> expressions{};
+    expressions.push_back(parse_expression_primary());
+    std::vector<lexer::token_t> ops{};
+    return parse_expression_precedence_climbing(expressions, ops, 0);
+  }
+
+  std::unique_ptr<internal::expression_t> parse_expression_primary() {
     if (try_with(lexer::symbol_t::minus)) {
       next();
       auto ret = std::make_unique<internal::expression_binary_op_t>(
           lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.start = "*", .length = 1}},
           std::make_unique<internal::number_t>(
               lexer::token_t{.symbol = lexer::symbol_t::number, .annotation = {.start = "-1", .length = 2}}),
-          std::make_unique<internal::number_t>(*cur_token()));
-      next();
+          parse_expression_without_leading_sign());
       return ret;
     }
     if (try_with(lexer::symbol_t::plus)) {
@@ -343,6 +361,14 @@ private:
   }
 
   std::unique_ptr<internal::expression_t> parse_expression_without_leading_sign() {
+    if (!try_with(lexer::symbol_t::number) && !try_with(lexer::symbol_t::ident) && !try_with(lexer::symbol_t::lparen)) {
+      if (cur_token().has_value()) {
+        internal::error("expected '(', number or identifier, got ", internal::sv(*cur_token()));
+      } else {
+        internal::error("expected '(', number or identifier, got EOF");
+      }
+    }
+
     if (try_with(lexer::symbol_t::number)) {
       auto ret = std::make_unique<internal::number_t>(*cur_token());
       next();
@@ -360,7 +386,62 @@ private:
       next();
       return ret;
     }
-    return {};
+    __builtin_unreachable();
+  }
+
+  std::unique_ptr<internal::expression_t>
+  parse_expression_precedence_climbing(std::vector<std::unique_ptr<internal::expression_t>>& expressions,
+                                       std::vector<lexer::token_t>& ops, int precedence) {
+    static std::map<lexer::symbol_t, int> const precedences = {
+        {lexer::symbol_t::plus, 1},
+        {lexer::symbol_t::minus, 1},
+        {lexer::symbol_t::times, 2},
+        {lexer::symbol_t::divide, 2},
+    };
+
+    while (cur_token().has_value()) {
+      auto const it = precedences.find(cur_token()->symbol);
+      if (it == precedences.cend()) {
+        break;
+      }
+
+      if (precedence < it->second) {
+        ops.push_back(*cur_token());
+        next();
+        expressions.push_back(parse_expression_without_leading_sign());
+        precedence = it->second;
+      } else if (precedence == it->second) {
+        auto const op = ops.back();
+        ops.back() = *cur_token();
+        auto lhs = std::move(expressions.back());
+        next();
+        auto rhs = parse_expression_without_leading_sign();
+        expressions.back() = std::make_unique<internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
+        expressions.push_back(parse_expression_without_leading_sign());
+      } else {
+        parse_expression_reduce_all(expressions, ops);
+        precedence = it->second;
+        ops.push_back(*cur_token());
+        next();
+        expressions.push_back(parse_expression_without_leading_sign());
+      }
+    }
+    parse_expression_reduce_all(expressions, ops);
+    return std::move(expressions[0]);
+  }
+
+  static void parse_expression_reduce_all(std::vector<std::unique_ptr<internal::expression_t>>& expressions,
+                                          std::vector<lexer::token_t>& ops) {
+    // NOLINTNEXTLINE(hicpp-no-array-decay, cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    assert(ops.size() + 1 == expressions.size());
+    while (!ops.empty()) {
+      auto rhs = std::move(expressions.back());
+      expressions.pop_back();
+      auto lhs = std::move(expressions.back());
+      auto const op = ops.back();
+      ops.pop_back();
+      expressions.back() = std::make_unique<internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
+    }
   }
 
   lexer::tokens_t m_tokens;

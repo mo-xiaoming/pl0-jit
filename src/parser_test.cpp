@@ -42,7 +42,10 @@ TEST(ParserTestSuite, Expression) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
 !3
 !x
+!+42
 !-42
+!+x
+!-x
 .
   )"));
 
