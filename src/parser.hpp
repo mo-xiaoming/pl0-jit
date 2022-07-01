@@ -381,7 +381,7 @@ private:
     }
     if (try_with(lexer::symbol_t::lparen)) {
       next();
-      auto ret = parse_expression_without_leading_sign();
+      auto ret = parse_expression();
       must_be(lexer::symbol_t::rparen);
       next();
       return ret;
@@ -413,9 +413,10 @@ private:
       } else if (precedence == it->second) {
         auto const op = ops.back();
         ops.back() = *cur_token();
-        auto lhs = std::move(expressions.back());
         next();
-        auto rhs = parse_expression_without_leading_sign();
+        auto rhs = std::move(expressions.back());
+        expressions.pop_back();
+        auto lhs = std::move(expressions.back());
         expressions.back() = std::make_unique<internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
         expressions.push_back(parse_expression_without_leading_sign());
       } else {
