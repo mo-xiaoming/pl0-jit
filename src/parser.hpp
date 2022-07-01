@@ -218,6 +218,17 @@ private:
     return ct && ct->symbol == s;
   }
 
+  [[nodiscard]] std::optional<const lexer::symbol_t> try_with_any_of(std::initializer_list<lexer::symbol_t> ss) {
+    auto const p = [this](lexer::symbol_t s) {
+      const auto ct = cur_token();
+      return ct && ct->symbol == s;
+    };
+    if (auto const* const it = std::find_if(ss.begin(), ss.end(), p); it != ss.end()) {
+      return *it;
+    }
+    return std::nullopt;
+  }
+
   void must_be(lexer::symbol_t s) const noexcept {
     if (!try_with(s)) {
       auto const ct = cur_token();
@@ -361,7 +372,7 @@ private:
   }
 
   std::unique_ptr<const internal::expression_t> parse_expression_without_leading_sign() {
-    if (!try_with(lexer::symbol_t::number) && !try_with(lexer::symbol_t::ident) && !try_with(lexer::symbol_t::lparen)) {
+    if (!try_with_any_of({lexer::symbol_t::number, lexer::symbol_t::ident, lexer::symbol_t::lparen}).has_value()) {
       if (cur_token().has_value()) {
         internal::error("expected '(', number or identifier, got ", internal::sv(*cur_token()));
       } else {
