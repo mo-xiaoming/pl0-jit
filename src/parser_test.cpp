@@ -31,8 +31,22 @@ call b
 .
   )"));
 
-  [[maybe_unused]] auto parser = parser::parser_t(tokens);
+  auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
   EXPECT_TRUE(!!std::get_if<parser::parse_error_ok_t>(&result));
-  parser.print();
+  std::cout << parser << '\n';
+}
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
+TEST(ParserTestSuite, Expression) {
+  auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
+!3
+!x
+.
+  )"));
+
+  auto parser = parser::parser_t(tokens);
+  auto const result = parser.parse();
+  EXPECT_TRUE(!!std::get_if<parser::parse_error_ok_t>(&result));
+  std::cout << parser << '\n';
 }

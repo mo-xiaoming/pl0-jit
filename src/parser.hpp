@@ -53,24 +53,67 @@ template <typename T, typename... Ts> void error(T&& v, Ts&&... vs) {
   std::exit(1);
 }
 
-template <typename T, typename... Ts> void info(T&& v, Ts&&... vs) {
-  std::cout << utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)...) << '\n';
+template <typename T, typename... Ts> [[nodiscard]] std::string info_str(T&& v, Ts&&... vs) {
+  return utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)..., '\n');
 }
 
 struct statement_t {
   virtual ~statement_t() = default;
 
-  virtual void print() const = 0;
+  [[nodiscard]] virtual std::string to_string() const = 0;
 };
 
 [[nodiscard]] inline constexpr std::string_view sv(lexer::token_t const& token) noexcept {
   return {token.annotation.start, token.annotation.start + token.annotation.length};
 }
 
+struct expression_t {
+  virtual ~expression_t() = default;
+
+  virtual std::string to_string() const = 0;
+};
+
+inline std::ostream& operator<<(std::ostream& os, expression_t const& expression) {
+  return os << expression.to_string();
+}
+
+struct expression_primary_t : expression_t {};
+
+struct expression_binary_op_t : expression_t {
+  expression_binary_op_t(lexer::token_t const& op, std::unique_ptr<expression_t>&& lhs,
+                         std::unique_ptr<expression_t>&& rhs)
+      : m_op(op), m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str('(', m_op, ' ', m_lhs, ' ', m_rhs, ')'); }
+
+private:
+  lexer::token_t m_op;
+  std::unique_ptr<expression_t> m_lhs;
+  std::unique_ptr<expression_t> m_rhs;
+};
+
+struct number_t : expression_primary_t {
+  explicit number_t(lexer::token_t const& value) : m_value(value) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str(sv(m_value)); }
+
+private:
+  lexer::token_t m_value;
+};
+
+struct ident_t : expression_primary_t {
+  explicit ident_t(lexer::token_t const& name) : m_name(name) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str(sv(m_name)); }
+
+private:
+  lexer::token_t m_name;
+};
+
 struct call_t : statement_t {
   explicit call_t(lexer::token_t const& ident) : m_ident(ident) {}
 
-  void print() const override { info("call ", sv(m_ident)); }
+  [[nodiscard]] std::string to_string() const override { return info_str("call ", sv(m_ident)); }
 
 private:
   lexer::token_t m_ident;
@@ -79,16 +122,25 @@ private:
 struct in_t : statement_t {
   explicit in_t(lexer::token_t const& ident) : m_ident(ident) {}
 
-  void print() const override { info("?", sv(m_ident)); }
+  [[nodiscard]] std::string to_string() const override { return info_str("?", sv(m_ident)); }
 
 private:
   lexer::token_t m_ident;
 };
 
+struct out_t : statement_t {
+  explicit out_t(std::unique_ptr<expression_t>&& expression) : m_expression(std::move(expression)) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str("!", *m_expression); }
+
+private:
+  std::unique_ptr<expression_t> m_expression;
+};
+
 struct const_t {
   const_t(lexer::token_t const& ident, lexer::token_t const& num) : m_ident(ident), m_num(num) {}
 
-  void print() const { info("const ", sv(m_ident), " = ", sv(m_num)); }
+  [[nodiscard]] std::string to_string() const { return info_str("const ", sv(m_ident), " = ", sv(m_num)); }
 
 private:
   lexer::token_t m_ident;
@@ -98,7 +150,7 @@ private:
 struct var_t {
   explicit var_t(lexer::token_t const& ident) : m_ident(ident) {}
 
-  void print() const { info("var ", sv(m_ident)); }
+  [[nodiscard]] std::string to_string() const { return info_str("var ", sv(m_ident)); }
 
 private:
   lexer::token_t m_ident;
@@ -108,19 +160,20 @@ struct program_t {
   std::vector<const_t> consts;
   std::vector<var_t> vars;
   std::vector<std::unique_ptr<statement_t>> statements;
-};
 
-inline void print(program_t const& program) {
-  for (auto const& c : program.consts) {
-    c.print();
+  friend std::ostream& operator<<(std::ostream& os, program_t const& program) {
+    for (auto const& c : program.consts) {
+      os << c.to_string();
+    }
+    for (auto const& v : program.vars) {
+      os << v.to_string();
+    }
+    for (auto const& s : program.statements) {
+      os << s->to_string();
+    }
+    return os;
   }
-  for (auto const& v : program.vars) {
-    v.print();
-  }
-  for (auto const& s : program.statements) {
-    s->print();
-  }
-}
+};
 } // namespace internal
 
 struct parser_t {
@@ -136,7 +189,7 @@ struct parser_t {
     return parse_error_ok_t{};
   };
 
-  void print() const { internal::print(m_program); }
+  friend std::ostream& operator<<(std::ostream& os, parser_t const& parser) { return os << parser.m_program; }
 
 private:
   lexer::tokens_t::size_type m_cur_pos = 0;
@@ -243,6 +296,12 @@ private:
     return internal::in_t{id};
   }
 
+  internal::out_t parse_top_level_out() {
+    next();
+
+    return internal::out_t{parse_expression()};
+  }
+
   internal::call_t parse_top_level_call() {
     next();
 
@@ -262,7 +321,46 @@ private:
       if (try_with(lexer::symbol_t::call)) {
         m_program.statements.push_back(std::make_unique<internal::call_t>(parse_top_level_call()));
       }
+      if (try_with(lexer::symbol_t::out)) {
+        m_program.statements.push_back(std::make_unique<internal::out_t>(parse_top_level_out()));
+      }
     }
+  }
+
+  std::unique_ptr<internal::expression_t> parse_expression() {
+    if (try_with(lexer::symbol_t::minus)) {
+      next();
+      return std::make_unique<internal::expression_binary_op_t>(
+          lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.start = "*", .length = 0}},
+          std::make_unique<internal::number_t>(
+              lexer::token_t{.symbol = lexer::symbol_t::number, .annotation = {.start = "-1", .length = 0}}),
+          std::make_unique<internal::number_t>(*cur_token()));
+    }
+    if (try_with(lexer::symbol_t::plus)) {
+      next();
+    }
+    return parse_expression_without_leading_sign();
+  }
+
+  std::unique_ptr<internal::expression_t> parse_expression_without_leading_sign() {
+    if (try_with(lexer::symbol_t::number)) {
+      auto ret = std::make_unique<internal::number_t>(*cur_token());
+      next();
+      return ret;
+    }
+    if (try_with(lexer::symbol_t::ident)) {
+      auto ret = std::make_unique<internal::ident_t>(*cur_token());
+      next();
+      return ret;
+    }
+    if (try_with(lexer::symbol_t::lparen)) {
+      next();
+      auto ret = parse_expression_without_leading_sign();
+      must_be(lexer::symbol_t::rparen);
+      next();
+      return ret;
+    }
+    return {};
   }
 
   lexer::tokens_t m_tokens;
