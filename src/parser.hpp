@@ -147,6 +147,17 @@ private:
   std::unique_ptr<const expression_t> m_expression;
 };
 
+struct becomes_t : statement_t {
+  becomes_t(lexer::token_t const& name, std::unique_ptr<const expression_t>&& expression)
+      : m_name(name), m_expression(std::move(expression)) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str(sv(m_name), ":=", m_expression->to_string()); }
+
+private:
+  lexer::token_t m_name;
+  std::unique_ptr<const expression_t> m_expression;
+};
+
 struct const_t {
   const_t(lexer::token_t const& ident, lexer::token_t const& num) : m_ident(ident), m_num(num) {}
 
@@ -334,6 +345,18 @@ private:
     return internal::call_t{id};
   }
 
+  internal::becomes_t parse_top_level_becomes() {
+    auto const id = *cur_token();
+    next();
+
+    must_be(lexer::symbol_t::becomes);
+    next();
+
+    auto expr = parse_expression();
+
+    return internal::becomes_t{id, std::move(expr)};
+  }
+
   void parse_top_level_statements() {
     while (!try_with(lexer::symbol_t::period)) {
       if (try_with(lexer::symbol_t::in)) {
@@ -344,6 +367,9 @@ private:
       }
       if (try_with(lexer::symbol_t::out)) {
         m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_top_level_out()));
+      }
+      if (try_with(lexer::symbol_t::ident)) {
+        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_top_level_becomes()));
       }
     }
   }
