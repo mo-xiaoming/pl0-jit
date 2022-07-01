@@ -54,7 +54,7 @@ template <typename T, typename... Ts> void error(T&& v, Ts&&... vs) {
 }
 
 template <typename T, typename... Ts> [[nodiscard]] std::string info_str(T&& v, Ts&&... vs) {
-  return utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)..., '\n');
+  return utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)...);
 }
 
 struct statement_t {
@@ -73,10 +73,6 @@ struct expression_t {
   virtual std::string to_string() const = 0;
 };
 
-inline std::ostream& operator<<(std::ostream& os, expression_t const& expression) {
-  return os << expression.to_string();
-}
-
 struct expression_primary_t : expression_t {};
 
 struct expression_binary_op_t : expression_t {
@@ -84,7 +80,9 @@ struct expression_binary_op_t : expression_t {
                          std::unique_ptr<expression_t>&& rhs)
       : m_op(op), m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
 
-  [[nodiscard]] std::string to_string() const override { return info_str('(', m_op, ' ', m_lhs, ' ', m_rhs, ')'); }
+  [[nodiscard]] std::string to_string() const override {
+    return info_str('(', sv(m_op), ' ', m_lhs->to_string(), ' ', m_rhs->to_string(), ')');
+  }
 
 private:
   lexer::token_t m_op;
@@ -131,7 +129,7 @@ private:
 struct out_t : statement_t {
   explicit out_t(std::unique_ptr<expression_t>&& expression) : m_expression(std::move(expression)) {}
 
-  [[nodiscard]] std::string to_string() const override { return info_str("!", *m_expression); }
+  [[nodiscard]] std::string to_string() const override { return info_str("!", m_expression->to_string()); }
 
 private:
   std::unique_ptr<expression_t> m_expression;
@@ -163,13 +161,13 @@ struct program_t {
 
   friend std::ostream& operator<<(std::ostream& os, program_t const& program) {
     for (auto const& c : program.consts) {
-      os << c.to_string();
+      os << c.to_string() << '\n';
     }
     for (auto const& v : program.vars) {
-      os << v.to_string();
+      os << v.to_string() << '\n';
     }
     for (auto const& s : program.statements) {
-      os << s->to_string();
+      os << s->to_string() << '\n';
     }
     return os;
   }
@@ -330,11 +328,13 @@ private:
   std::unique_ptr<internal::expression_t> parse_expression() {
     if (try_with(lexer::symbol_t::minus)) {
       next();
-      return std::make_unique<internal::expression_binary_op_t>(
-          lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.start = "*", .length = 0}},
+      auto ret = std::make_unique<internal::expression_binary_op_t>(
+          lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.start = "*", .length = 1}},
           std::make_unique<internal::number_t>(
-              lexer::token_t{.symbol = lexer::symbol_t::number, .annotation = {.start = "-1", .length = 0}}),
+              lexer::token_t{.symbol = lexer::symbol_t::number, .annotation = {.start = "-1", .length = 2}}),
           std::make_unique<internal::number_t>(*cur_token()));
+      next();
+      return ret;
     }
     if (try_with(lexer::symbol_t::plus)) {
       next();
