@@ -134,6 +134,34 @@ end
 begin !4 end.)",
      "if 3<=4 then begin\n!4\nend\n"},
     // expressions
+    {R"(!3.)", "!3\n"},
+    {R"(!x.)", "!x\n"},
+    {R"(!+42.)", "!42\n"},
+    {R"(!-42.)", "!(* -1 42)\n"},
+    {R"(var x;!+x.)", "var x\n!x\n"},
+    {R"(var x;!-x.)", "var x\n!(* -1 x)\n"},
+    {R"(!3+4.)", "!(+ 3 4)\n"},
+    {R"(!3*4.)", "!(* 3 4)\n"},
+    {R"(!-3/4.)", "!(/ (* -1 3) 4)\n"},
+    {R"(!-3-4.)", "!(- (* -1 3) 4)\n"},
+    {R"(!(3).)", "!3\n"},
+    {R"(!-(3).)", "!(* -1 3)\n"},
+    {R"(!(-4).)", "!(* -1 4)\n"},
+    {R"(!-(-4).)", "!(* -1 (* -1 4))\n"},
+    {R"(!(3-4).)", "!(- 3 4)\n"},
+    {R"(!(-3-4).)", "!(- (* -1 3) 4)\n"},
+    {R"(!3+4*5.)", "!(+ 3 (* 4 5))\n"},
+    {R"(!3*4+5.)", "!(+ (* 3 4) 5)\n"},
+    {R"(!3+4-5.)", "!(- (+ 3 4) 5)\n"},
+    {R"(!3+(4-5).)", "!(+ 3 (- 4 5))\n"},
+    {R"(!(3+(4-5)).)", "!(+ 3 (- 4 5))\n"},
+    {R"(!(3+4)-5.)", "!(- (+ 3 4) 5)\n"},
+    {R"(!3+4*5/6-7.)", "!(- (+ 3 (/ (* 4 5) 6)) 7)\n"},
+    {R"(!3+4*5/(6-7).)", "!(+ 3 (/ (* 4 5) (- 6 7)))\n"},
+    {R"(!(3+4)*5/6-7.)", "!(- (/ (* (+ 3 4) 5) 6) 7)\n"},
+    {R"(var a, b;!(3+a)/4+7*(b-42).)", "var a\nvar b\n!(+ (/ (+ 3 a) 4) (* 7 (- b 42)))\n"},
+    {R"(var a, b;!(3+a)/(4+7*(b-42)).)", "var a\nvar b\n!(/ (+ 3 a) (+ 4 (* 7 (- b 42))))\n"},
+    {R"(var a,b,c,abc;abc:=3+a-b*c.)", "var a\nvar b\nvar c\nvar abc\nabc:=(- (+ 3 a) (* b c))\n"},
 };
 } // namespace
 struct ParserTestSuite : public testing::TestWithParam<test_data_t> {};
@@ -151,48 +179,3 @@ TEST_P(ParserTestSuite, Basic) {
   EXPECT_TRUE(!!std::get_if<parser::parse_error_ok_t>(&result));
   EXPECT_EQ(utils::str::to_str(parser), expected);
 }
-#if 0
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
-TEST(ParserTestSuite, Expression) {
-  auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
-var x, a, b, c, abc;
-
-!3
-!x
-!+42
-!-42
-!+x
-!-x
-!3+4
-!3*4
-!-3/4
-!-3-4
-!(3)
-!-(3)
-!(-4)
-!-(-4)
-!(3-4)
-!(-3-4)
-
-!3+4*5
-!3*4+5
-!3+4-5
-!3+(4-5)
-!(3+(4-5))
-!(3+4)-5
-!3+4*5/6-7
-!3+4*5/(6-7)
-!(3+4)*5/6-7
-!(3+a)/4+7*(b-42)
-!(3+a)/(4+7*(b-42))
-
-abc:=3+a-b*c
-.
-  )"));
-
-  auto parser = parser::parser_t(tokens);
-  auto const result = parser.parse();
-  EXPECT_TRUE(!!std::get_if<parser::parse_error_ok_t>(&result));
-  std::cout << parser << '\n';
-}
-#endif
