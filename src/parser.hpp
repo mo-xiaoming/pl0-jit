@@ -273,12 +273,12 @@ private:
   }
 
   void parse_top_block(environment_t const& env) {
-    parse_top_level_consts(env);
-    parse_top_level_vars(env);
-    parse_top_level_statements(env);
+    parse_consts(env);
+    parse_vars(env);
+    parse_statements(env);
   }
 
-  std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name) {
+  static std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name) {
     auto const find_name = [&name](auto const& container) -> std::optional<lexer::token_t> {
       if (auto const it =
               std::find_if(container.cbegin(), container.cend(),
@@ -300,7 +300,7 @@ private:
     return std::nullopt;
   }
 
-  void parse_top_level_consts(environment_t const& env) {
+  void parse_consts(environment_t const& env) {
     if (!try_with(lexer::symbol_t::const_)) {
       return;
     }
@@ -334,7 +334,7 @@ private:
     }
   }
 
-  void parse_top_level_vars(environment_t const& env) {
+  void parse_vars(environment_t const& env) {
     if (!try_with(lexer::symbol_t::var)) {
       return;
     }
@@ -361,7 +361,7 @@ private:
     }
   }
 
-  internal::in_t parse_top_level_in(environment_t const& env) {
+  internal::in_t parse_in(environment_t const& env) {
     next();
 
     must_be(lexer::symbol_t::ident);
@@ -375,18 +375,18 @@ private:
     return internal::in_t{id};
   }
 
-  internal::out_t parse_top_level_out(environment_t const& env) {
+  internal::out_t parse_out(environment_t const& env) {
     next();
 
     return internal::out_t{parse_expression(env)};
   }
 
-  internal::call_t parse_top_level_call(environment_t const& /*env*/) {
+  internal::call_t parse_call(environment_t const& /*env*/) {
     next();
 
     must_be(lexer::symbol_t::ident);
     auto const id = *cur_token();
-// TODO(mx): name should be defined in the scope
+// TODO(mx): name should be defined in the scope. Do it in codegen phase?
 #if 0
     if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
       internal::error(id, " has not been defined");
@@ -398,7 +398,7 @@ private:
     return internal::call_t{id};
   }
 
-  internal::becomes_t parse_top_level_becomes(environment_t const& env) {
+  internal::becomes_t parse_becomes(environment_t const& env) {
     auto const id = *cur_token();
     if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
       internal::error(id, " has not been defined");
@@ -413,19 +413,19 @@ private:
     return internal::becomes_t{id, std::move(expr)};
   }
 
-  void parse_top_level_statements(environment_t const& env) {
+  void parse_statements(environment_t const& env) {
     while (!try_with(lexer::symbol_t::period)) {
       if (try_with(lexer::symbol_t::in)) {
-        m_program.statements.push_back(std::make_unique<const internal::in_t>(parse_top_level_in(env)));
+        m_program.statements.push_back(std::make_unique<const internal::in_t>(parse_in(env)));
       }
       if (try_with(lexer::symbol_t::call)) {
-        m_program.statements.push_back(std::make_unique<const internal::call_t>(parse_top_level_call(env)));
+        m_program.statements.push_back(std::make_unique<const internal::call_t>(parse_call(env)));
       }
       if (try_with(lexer::symbol_t::out)) {
-        m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_top_level_out(env)));
+        m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_out(env)));
       }
       if (try_with(lexer::symbol_t::ident)) {
-        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_top_level_becomes(env)));
+        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_becomes(env)));
       }
     }
   }
