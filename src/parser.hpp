@@ -259,6 +259,7 @@ private:
     environment_t* parent;
     std::vector<internal::const_t>* consts;
     std::vector<internal::var_t>* vars;
+    std::vector<std::unique_ptr<const internal::statement_t>>* statements;
   };
 
   void parse_program() {
@@ -266,13 +267,14 @@ private:
         .parent = nullptr,
         .consts = &m_program.consts,
         .vars = &m_program.vars,
+        .statements = &m_program.statements,
     };
 
-    parse_top_block(top_env);
+    parse_block(top_env);
     must_be(lexer::symbol_t::period);
   }
 
-  void parse_top_block(environment_t const& env) {
+  void parse_block(environment_t const& env) {
     parse_consts(env);
     parse_vars(env);
     parse_statements(env);
@@ -413,19 +415,31 @@ private:
     return internal::becomes_t{id, std::move(expr)};
   }
 
+  void parse_begin(environment_t const& env) {
+    next();
+    parse_statements(env);
+    if (try_with(lexer::symbol_t::semicolon)) {
+      next();
+      parse_statements(env);
+    }
+    must_be(lexer::symbol_t::end);
+    next();
+  }
+
   void parse_statements(environment_t const& env) {
-    while (!try_with(lexer::symbol_t::period)) {
+    while (true) {
       if (try_with(lexer::symbol_t::in)) {
-        m_program.statements.push_back(std::make_unique<const internal::in_t>(parse_in(env)));
-      }
-      if (try_with(lexer::symbol_t::call)) {
-        m_program.statements.push_back(std::make_unique<const internal::call_t>(parse_call(env)));
-      }
-      if (try_with(lexer::symbol_t::out)) {
-        m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_out(env)));
-      }
-      if (try_with(lexer::symbol_t::ident)) {
-        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_becomes(env)));
+        env.statements->push_back(std::make_unique<const internal::in_t>(parse_in(env)));
+      } else if (try_with(lexer::symbol_t::call)) {
+        env.statements->push_back(std::make_unique<const internal::call_t>(parse_call(env)));
+      } else if (try_with(lexer::symbol_t::out)) {
+        env.statements->push_back(std::make_unique<const internal::out_t>(parse_out(env)));
+      } else if (try_with(lexer::symbol_t::ident)) {
+        env.statements->push_back(std::make_unique<const internal::becomes_t>(parse_becomes(env)));
+      } else if (try_with(lexer::symbol_t::begin)) {
+        parse_begin(env);
+      } else {
+        break;
       }
     }
   }

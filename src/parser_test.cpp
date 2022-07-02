@@ -28,6 +28,10 @@ var g;
 ?a
 ?c
 call b
+begin
+?c;
+begin ?a end
+end
 .
   )"));
 
