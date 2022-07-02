@@ -52,7 +52,7 @@ using parse_error_t = std::variant<parse_error_ok_t, parse_error_empty_file_t>;
 namespace internal {
 template <typename T, typename... Ts> void error(T&& v, Ts&&... vs) {
   std::cerr << utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)...) << '\n';
-  std::exit(1);
+  // std::exit(1);
 }
 
 template <typename T, typename... Ts> [[nodiscard]] std::string info_str(T&& v, Ts&&... vs) {
@@ -158,10 +158,76 @@ private:
   std::unique_ptr<const expression_t> m_expression;
 };
 
+struct condition_t {
+  condition_t() = default;
+  condition_t(condition_t const&) = default;
+  condition_t(condition_t&&) noexcept = default;
+  condition_t& operator=(condition_t const&) & = default;
+  condition_t& operator=(condition_t&&) & noexcept = default;
+  virtual ~condition_t() = default;
+
+  [[nodiscard]] virtual std::string to_string() const = 0;
+};
+
+struct odd_condition_t : condition_t {
+  explicit odd_condition_t(std::unique_ptr<const expression_t>&& expression) : m_expression(std::move(expression)) {}
+
+  [[nodiscard]] std::string to_string() const override { return info_str("odd ", m_expression->to_string()); }
+
+private:
+  std::unique_ptr<const expression_t> m_expression;
+};
+
+struct cmp_condition_t : condition_t {
+  explicit cmp_condition_t(lexer::token_t const& op, std::unique_ptr<const expression_t>&& lhs,
+                           std::unique_ptr<const expression_t>&& rhs)
+      : m_op(op), m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
+
+  [[nodiscard]] std::string to_string() const override {
+    return info_str(m_lhs->to_string(), sv(m_op), m_rhs->to_string());
+  }
+
+private:
+  lexer::token_t m_op;
+  std::unique_ptr<const expression_t> m_lhs;
+  std::unique_ptr<const expression_t> m_rhs;
+};
+
+struct if_then_t : statement_t {
+  if_then_t(std::unique_ptr<const condition_t>&& condition, std::unique_ptr<const statement_t>&& statement)
+      : m_condition(std::move(condition)), m_statement(std::move(statement)) {}
+
+  [[nodiscard]] std::string to_string() const override {
+    return info_str("if ", m_condition->to_string(), " then ", m_statement->to_string());
+  }
+
+private:
+  std::unique_ptr<const condition_t> m_condition;
+  std::unique_ptr<const statement_t> m_statement;
+};
+
+struct begin_end_t : statement_t {
+  explicit begin_end_t(std::vector<std::unique_ptr<const statement_t>>&& statements)
+      : m_statements(std::move(statements)) {}
+
+  [[nodiscard]] std::string to_string() const override {
+    std::ostringstream oss;
+    oss << "begin\n";
+    for (auto const& s : m_statements) {
+      oss << s->to_string() << '\n';
+    }
+    oss << "end";
+    return std::move(oss).str();
+  }
+
+private:
+  std::vector<std::unique_ptr<const statement_t>> m_statements;
+};
+
 struct const_t {
   const_t(lexer::token_t const& ident, lexer::token_t const& num) : m_ident(ident), m_num(num) {}
 
-  [[nodiscard]] std::string to_string() const { return info_str("const ", sv(m_ident), " = ", sv(m_num)); }
+  [[nodiscard]] std::string to_string() const { return info_str("const ", sv(m_ident), "=", sv(m_num)); }
 
   [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
 
@@ -244,6 +310,14 @@ private:
     return std::nullopt;
   }
 
+  std::optional<lexer::symbol_t> must_be_any_of(std::initializer_list<lexer::symbol_t> ss) {
+    if (auto const ret = try_with_any_of(ss); ret) {
+      return ret;
+    }
+    internal::error("unknown symbol");
+    return std::nullopt;
+  }
+
   void must_be(lexer::symbol_t s) const noexcept {
     if (!try_with(s)) {
       auto const ct = cur_token();
@@ -277,7 +351,7 @@ private:
   void parse_block(environment_t const& env) {
     parse_consts(env);
     parse_vars(env);
-    parse_statements(env);
+    *env.statements = parse_statements(env);
   }
 
   static std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name) {
@@ -415,33 +489,76 @@ private:
     return internal::becomes_t{id, std::move(expr)};
   }
 
-  void parse_begin(environment_t const& env) {
-    next();
-    parse_statements(env);
-    if (try_with(lexer::symbol_t::semicolon)) {
+  internal::begin_end_t parse_begin_end(environment_t const& env) {
+    std::vector<std::unique_ptr<const internal::statement_t>> statements;
+    std::vector<std::unique_ptr<const internal::statement_t>> sub_statements;
+    do {
       next();
-      parse_statements(env);
-    }
+      sub_statements = parse_statements(env);
+      statements.insert(statements.end(), std::make_move_iterator(sub_statements.begin()),
+                        std::make_move_iterator(sub_statements.end()));
+    } while (try_with(lexer::symbol_t::semicolon));
     must_be(lexer::symbol_t::end);
     next();
+
+    return internal::begin_end_t{std::move(statements)};
   }
 
-  void parse_statements(environment_t const& env) {
+  std::unique_ptr<const internal::condition_t> parse_condition(environment_t const& env) {
+    next();
+    if (try_with(lexer::symbol_t::odd)) {
+      next();
+      return std::make_unique<const internal::odd_condition_t>(parse_expression(env));
+    }
+    auto lhs = parse_expression(env);
+    must_be_any_of({lexer::symbol_t::equal, lexer::symbol_t::not_equal, lexer::symbol_t::less_equal,
+                    lexer::symbol_t::less, lexer::symbol_t::greater_equal, lexer::symbol_t::greater});
+    auto const op = *cur_token();
+    next();
+    auto rhs = parse_expression(env);
+
+    return std::make_unique<const internal::cmp_condition_t>(op, std::move(lhs), std::move(rhs));
+  }
+
+  std::unique_ptr<const internal::statement_t> parse_statement(environment_t const& env) {
+    if (try_with(lexer::symbol_t::in)) {
+      return std::make_unique<const internal::in_t>(parse_in(env));
+    }
+    if (try_with(lexer::symbol_t::call)) {
+      return std::make_unique<const internal::call_t>(parse_call(env));
+    }
+    if (try_with(lexer::symbol_t::out)) {
+      return std::make_unique<const internal::out_t>(parse_out(env));
+    }
+    if (try_with(lexer::symbol_t::ident)) {
+      return std::make_unique<const internal::becomes_t>(parse_becomes(env));
+    }
+    if (try_with(lexer::symbol_t::begin)) {
+      return std::make_unique<const internal::begin_end_t>(parse_begin_end(env));
+    }
+    if (try_with(lexer::symbol_t::if_)) {
+      return std::make_unique<const internal::if_then_t>(parse_if_then(env));
+    }
+    return {};
+  }
+
+  internal::if_then_t parse_if_then(environment_t const& env) {
+    auto condition = parse_condition(env);
+    must_be(lexer::symbol_t::then);
+    next();
+    return internal::if_then_t{std::move(condition), parse_statement(env)};
+  }
+
+  std::vector<std::unique_ptr<const internal::statement_t>> parse_statements(environment_t const& env) {
+    std::vector<std::unique_ptr<const internal::statement_t>> statements;
     while (true) {
-      if (try_with(lexer::symbol_t::in)) {
-        env.statements->push_back(std::make_unique<const internal::in_t>(parse_in(env)));
-      } else if (try_with(lexer::symbol_t::call)) {
-        env.statements->push_back(std::make_unique<const internal::call_t>(parse_call(env)));
-      } else if (try_with(lexer::symbol_t::out)) {
-        env.statements->push_back(std::make_unique<const internal::out_t>(parse_out(env)));
-      } else if (try_with(lexer::symbol_t::ident)) {
-        env.statements->push_back(std::make_unique<const internal::becomes_t>(parse_becomes(env)));
-      } else if (try_with(lexer::symbol_t::begin)) {
-        parse_begin(env);
+      if (auto ret = parse_statement(env); ret) {
+        statements.push_back(std::move(ret));
       } else {
         break;
       }
     }
+    return statements;
   }
 
   std::unique_ptr<const internal::expression_t> parse_expression(environment_t const& env) {
