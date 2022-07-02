@@ -40,6 +40,8 @@ call b
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
 TEST(ParserTestSuite, Expression) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
+var x, a, b, c, abc;
+
 !3
 !x
 !+42

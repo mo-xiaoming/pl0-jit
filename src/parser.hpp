@@ -163,6 +163,8 @@ struct const_t {
 
   [[nodiscard]] std::string to_string() const { return info_str("const ", sv(m_ident), " = ", sv(m_num)); }
 
+  [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
+
 private:
   lexer::token_t m_ident;
   lexer::token_t m_num;
@@ -172,6 +174,8 @@ struct var_t {
   explicit var_t(lexer::token_t const& ident) : m_ident(ident) {}
 
   [[nodiscard]] std::string to_string() const { return info_str("var ", sv(m_ident)); }
+
+  [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
 
 private:
   lexer::token_t m_ident;
@@ -205,7 +209,7 @@ struct parser_t {
       return parse_error_empty_file_t{};
     }
 
-    parse_top_block();
+    parse_program();
 
     return parse_error_ok_t{};
   };
@@ -251,18 +255,52 @@ private:
     }
   }
 
+  struct environment_t {
+    environment_t* parent;
+    std::vector<internal::const_t>* consts;
+    std::vector<internal::var_t>* vars;
+  };
+
   void parse_program() {
-    parse_top_block();
+    environment_t const top_env = {
+        .parent = nullptr,
+        .consts = &m_program.consts,
+        .vars = &m_program.vars,
+    };
+
+    parse_top_block(top_env);
     must_be(lexer::symbol_t::period);
   }
 
-  void parse_top_block() {
-    parse_top_level_consts();
-    parse_top_level_vars();
-    parse_top_level_statements();
+  void parse_top_block(environment_t const& env) {
+    parse_top_level_consts(env);
+    parse_top_level_vars(env);
+    parse_top_level_statements(env);
   }
 
-  void parse_top_level_consts() {
+  std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name) {
+    auto const find_name = [&name](auto const& container) -> std::optional<lexer::token_t> {
+      if (auto const it =
+              std::find_if(container.cbegin(), container.cend(),
+                           [&name](auto const& e) { return internal::sv(name) == internal::sv(e.token()); });
+          it != container.cend()) {
+        return it->token();
+      }
+      return std::nullopt;
+    };
+
+    for (auto const* cur_env = &env; cur_env != nullptr; cur_env = env.parent) {
+      if (auto const t = find_name(*cur_env->consts); t.has_value()) {
+        return *t;
+      }
+      if (auto const t = find_name(*cur_env->vars); t.has_value()) {
+        return *t;
+      }
+    }
+    return std::nullopt;
+  }
+
+  void parse_top_level_consts(environment_t const& env) {
     if (!try_with(lexer::symbol_t::const_)) {
       return;
     }
@@ -271,6 +309,9 @@ private:
       next();
       must_be(lexer::symbol_t::ident);
       auto const id = *cur_token();
+      if (auto const prev_define = lookup_name(env, id); prev_define.has_value()) {
+        internal::error(id, " has been defined at ", *prev_define);
+      }
 
       next();
       must_be(lexer::symbol_t::equal);
@@ -279,7 +320,7 @@ private:
       must_be(lexer::symbol_t::number);
       auto const num = *cur_token();
 
-      m_program.consts.emplace_back(id, num);
+      env.consts->emplace_back(id, num);
 
       next();
       if (try_with(lexer::symbol_t::semicolon)) {
@@ -293,7 +334,7 @@ private:
     }
   }
 
-  void parse_top_level_vars() {
+  void parse_top_level_vars(environment_t const& env) {
     if (!try_with(lexer::symbol_t::var)) {
       return;
     }
@@ -302,8 +343,11 @@ private:
       next();
       must_be(lexer::symbol_t::ident);
       auto const id = *cur_token();
+      if (auto const prev_define = lookup_name(env, id); prev_define.has_value()) {
+        internal::error(id, " has been defined at ", *prev_define);
+      }
 
-      m_program.vars.emplace_back(id);
+      env.vars->emplace_back(id);
 
       next();
       if (try_with(lexer::symbol_t::semicolon)) {
@@ -317,87 +361,99 @@ private:
     }
   }
 
-  internal::in_t parse_top_level_in() {
+  internal::in_t parse_top_level_in(environment_t const& env) {
     next();
 
     must_be(lexer::symbol_t::ident);
     auto const id = *cur_token();
+    if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
+      internal::error(id, " has not been defined");
+    }
 
     next();
 
     return internal::in_t{id};
   }
 
-  internal::out_t parse_top_level_out() {
+  internal::out_t parse_top_level_out(environment_t const& env) {
     next();
 
-    return internal::out_t{parse_expression()};
+    return internal::out_t{parse_expression(env)};
   }
 
-  internal::call_t parse_top_level_call() {
+  internal::call_t parse_top_level_call(environment_t const& /*env*/) {
     next();
 
     must_be(lexer::symbol_t::ident);
     auto const id = *cur_token();
+// TODO(mx): name should be defined in the scope
+#if 0
+    if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
+      internal::error(id, " has not been defined");
+    }
+#endif
 
     next();
 
     return internal::call_t{id};
   }
 
-  internal::becomes_t parse_top_level_becomes() {
+  internal::becomes_t parse_top_level_becomes(environment_t const& env) {
     auto const id = *cur_token();
+    if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
+      internal::error(id, " has not been defined");
+    }
     next();
 
     must_be(lexer::symbol_t::becomes);
     next();
 
-    auto expr = parse_expression();
+    auto expr = parse_expression(env);
 
     return internal::becomes_t{id, std::move(expr)};
   }
 
-  void parse_top_level_statements() {
+  void parse_top_level_statements(environment_t const& env) {
     while (!try_with(lexer::symbol_t::period)) {
       if (try_with(lexer::symbol_t::in)) {
-        m_program.statements.push_back(std::make_unique<const internal::in_t>(parse_top_level_in()));
+        m_program.statements.push_back(std::make_unique<const internal::in_t>(parse_top_level_in(env)));
       }
       if (try_with(lexer::symbol_t::call)) {
-        m_program.statements.push_back(std::make_unique<const internal::call_t>(parse_top_level_call()));
+        m_program.statements.push_back(std::make_unique<const internal::call_t>(parse_top_level_call(env)));
       }
       if (try_with(lexer::symbol_t::out)) {
-        m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_top_level_out()));
+        m_program.statements.push_back(std::make_unique<const internal::out_t>(parse_top_level_out(env)));
       }
       if (try_with(lexer::symbol_t::ident)) {
-        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_top_level_becomes()));
+        m_program.statements.push_back(std::make_unique<const internal::becomes_t>(parse_top_level_becomes(env)));
       }
     }
   }
 
-  std::unique_ptr<const internal::expression_t> parse_expression() {
+  std::unique_ptr<const internal::expression_t> parse_expression(environment_t const& env) {
     std::vector<std::unique_ptr<const internal::expression_t>> expressions{};
-    expressions.push_back(parse_expression_primary());
+    expressions.push_back(parse_expression_primary(env));
     std::vector<lexer::token_t> ops{};
-    return parse_expression_precedence_climbing(expressions, ops, 0);
+    return parse_expression_precedence_climbing(env, expressions, ops, 0);
   }
 
-  std::unique_ptr<const internal::expression_t> parse_expression_primary() {
+  std::unique_ptr<const internal::expression_t> parse_expression_primary(environment_t const& env) {
     if (try_with(lexer::symbol_t::minus)) {
       next();
       auto ret = std::make_unique<const internal::expression_binary_op_t>(
           lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.start = "*", .length = 1}},
           std::make_unique<const internal::number_t>(
               lexer::token_t{.symbol = lexer::symbol_t::number, .annotation = {.start = "-1", .length = 2}}),
-          parse_expression_without_leading_sign());
+          parse_expression_without_leading_sign(env));
       return ret;
     }
     if (try_with(lexer::symbol_t::plus)) {
       next();
     }
-    return parse_expression_without_leading_sign();
+    return parse_expression_without_leading_sign(env);
   }
 
-  std::unique_ptr<const internal::expression_t> parse_expression_without_leading_sign() {
+  std::unique_ptr<const internal::expression_t> parse_expression_without_leading_sign(environment_t const& env) {
     if (!try_with_any_of({lexer::symbol_t::number, lexer::symbol_t::ident, lexer::symbol_t::lparen}).has_value()) {
       if (cur_token().has_value()) {
         internal::error("expected '(', number or identifier, got ", internal::sv(*cur_token()));
@@ -412,13 +468,17 @@ private:
       return ret;
     }
     if (try_with(lexer::symbol_t::ident)) {
-      auto ret = std::make_unique<const internal::ident_t>(*cur_token());
+      auto const id = *cur_token();
+      if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
+        internal::error(id, " has not been defined");
+      }
+      auto ret = std::make_unique<const internal::ident_t>(id);
       next();
       return ret;
     }
     if (try_with(lexer::symbol_t::lparen)) {
       next();
-      auto ret = parse_expression();
+      auto ret = parse_expression(env);
       must_be(lexer::symbol_t::rparen);
       next();
       return ret;
@@ -427,7 +487,8 @@ private:
   }
 
   std::unique_ptr<const internal::expression_t>
-  parse_expression_precedence_climbing(std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
+  parse_expression_precedence_climbing(environment_t const& env,
+                                       std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
                                        std::vector<lexer::token_t>& ops, int precedence) {
     static std::map<lexer::symbol_t, int> const precedences = {
         {lexer::symbol_t::plus, 1},
@@ -445,7 +506,7 @@ private:
       if (precedence < it->second) {
         ops.push_back(*cur_token());
         next();
-        expressions.push_back(parse_expression_without_leading_sign());
+        expressions.push_back(parse_expression_without_leading_sign(env));
         precedence = it->second;
       } else if (precedence == it->second) {
         auto const op = ops.back();
@@ -456,13 +517,13 @@ private:
         auto lhs = std::move(expressions.back());
         expressions.back() =
             std::make_unique<const internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
-        expressions.push_back(parse_expression_without_leading_sign());
+        expressions.push_back(parse_expression_without_leading_sign(env));
       } else {
         parse_expression_reduce_all(expressions, ops);
         precedence = it->second;
         ops.push_back(*cur_token());
         next();
-        expressions.push_back(parse_expression_without_leading_sign());
+        expressions.push_back(parse_expression_without_leading_sign(env));
       }
     }
     parse_expression_reduce_all(expressions, ops);
