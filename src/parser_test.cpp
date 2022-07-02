@@ -130,6 +130,9 @@ end
 )"},
     {R"(var a, b; if a # b then !a.)", "var a\nvar b\nif a#b then !a\n"},
     {R"(if odd 3 then !4.)", "if odd 3 then !4\n"},
+    {R"(if 3 <= 4 then
+begin !4 end.)",
+     "if 3<=4 then begin\n!4\nend\n"},
     // expressions
 };
 } // namespace
