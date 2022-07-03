@@ -1,5 +1,4 @@
 #include "lexer.hpp"
-#include "lexer_symbols.hpp"
 #include "parser.hpp"
 #include "utils_for_test.hpp"
 
@@ -137,6 +136,14 @@ begin !4 end.)",
     {R"(while 3 <= 4 do
 begin !4 end.)",
      "while 3<=4 do begin\n!4\nend\n"},
+    {R"(procedure xyz;
+const x = 3;
+var squ;
+begin
+  squ:=x*x
+end;
+call squ.)",
+     "procedure xyz;const x=3\nvar squ\nbegin\nsqu:=(* x x)\nend\n;\ncall squ\n"},
     // expressions
     {R"(!3.)", "!3\n"},
     {R"(var x;!x.)", "var x\n!x\n"},

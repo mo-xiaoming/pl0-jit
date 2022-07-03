@@ -329,17 +329,35 @@ private:
   lexer::token_t m_ident;
 };
 
-struct program_t {
+struct environment_t;
+struct procedure_t {
+  procedure_t(lexer::token_t const& ident, environment_t&& env)
+      : m_ident(ident), m_env(std::make_unique<environment_t>(std::move(env))) {}
+
+  [[nodiscard]] std::string to_string() const { return info_str("procedure ", sv(m_ident), ';', *m_env, ';'); }
+
+private:
+  lexer::token_t m_ident;
+  std::unique_ptr<environment_t> m_env;
+};
+
+struct environment_t {
+  environment_t const* parent = nullptr;
+  lexer::token_t ident;
   std::vector<const_t> consts;
   std::vector<var_t> vars;
+  std::vector<procedure_t> procedures;
   std::vector<std::unique_ptr<const statement_t>> statements;
 
-  friend std::ostream& operator<<(std::ostream& os, program_t const& program) {
+  friend std::ostream& operator<<(std::ostream& os, environment_t const& program) {
     for (auto const& c : program.consts) {
       os << c.to_string() << '\n';
     }
     for (auto const& v : program.vars) {
       os << v.to_string() << '\n';
+    }
+    for (auto const& p : program.procedures) {
+      os << p.to_string() << '\n';
     }
     for (auto const& s : program.statements) {
       os << s->to_string() << '\n';
@@ -361,7 +379,7 @@ struct parser_t {
   };
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, parser_t const& parser) {
-    return os << parser.m_program;
+    return os << parser.m_top_env;
   }
 
 private:
@@ -416,43 +434,33 @@ private:
     return parse_error_early_eof_t{.expected = {s}};
   }
 
-  struct environment_t {
-    environment_t* parent;
-    std::vector<internal::const_t>* consts;
-    std::vector<internal::var_t>* vars;
-    std::vector<std::unique_ptr<const internal::statement_t>>* statements;
-  };
-
   [[nodiscard]] parse_error_t parse_program() {
-    environment_t const top_env = {
-        .parent = nullptr,
-        .consts = &m_program.consts,
-        .vars = &m_program.vars,
-        .statements = &m_program.statements,
-    };
-
-    if (auto pe = parse_block(top_env); has_parse_error(pe)) {
+    if (auto pe = parse_block(m_top_env); has_parse_error(pe)) {
       return pe;
     }
     return must_be(lexer::symbol_t::period);
   }
 
-  [[nodiscard]] parse_error_t parse_block(environment_t const& env) {
+  [[nodiscard]] parse_error_t parse_block(internal::environment_t& env) {
     if (auto pe = parse_consts(env); has_parse_error(pe)) {
       return pe;
     }
     if (auto pe = parse_vars(env); has_parse_error(pe)) {
       return pe;
     }
+    if (auto pe = parse_procedures(env); has_parse_error(pe)) {
+      return pe;
+    }
     auto ret = parse_statements(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    *env.statements = std::move(std::get<std::vector<std::unique_ptr<const internal::statement_t>>>(ret));
+    env.statements = std::move(std::get<std::vector<std::unique_ptr<const internal::statement_t>>>(ret));
     return parse_error_ok_t{};
   }
 
-  [[nodiscard]] static std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name) {
+  [[nodiscard]] static std::optional<lexer::token_t> lookup_name(internal::environment_t const& env,
+                                                                 lexer::token_t const& name) {
     auto const find_name = [&name](auto const& container) -> std::optional<lexer::token_t> {
       if (auto const it =
               std::find_if(container.cbegin(), container.cend(),
@@ -463,18 +471,21 @@ private:
       return std::nullopt;
     };
 
-    for (auto const* cur_env = &env; cur_env != nullptr; cur_env = env.parent) {
-      if (auto const t = find_name(*cur_env->consts); t.has_value()) {
+    for (auto const* cur_env = &env; cur_env != nullptr; cur_env = cur_env->parent) {
+      if (auto const t = find_name(cur_env->consts); t.has_value()) {
         return *t;
       }
-      if (auto const t = find_name(*cur_env->vars); t.has_value()) {
+      if (auto const t = find_name(cur_env->vars); t.has_value()) {
         return *t;
+      }
+      if (cur_env->parent != nullptr && cur_env->ident == name) {
+        return cur_env->ident;
       }
     }
     return std::nullopt;
   }
 
-  [[nodiscard]] parse_error_t parse_consts(environment_t const& env) {
+  [[nodiscard]] parse_error_t parse_consts(internal::environment_t& env) {
     if (!try_with(lexer::symbol_t::const_)) {
       return parse_error_ok_t{};
     }
@@ -500,7 +511,7 @@ private:
       }
       auto const num = *cur_token();
 
-      env.consts->emplace_back(id, num);
+      env.consts.emplace_back(id, num);
 
       next();
       if (try_with(lexer::symbol_t::semicolon)) {
@@ -518,7 +529,7 @@ private:
     return parse_error_ok_t{};
   }
 
-  [[nodiscard]] parse_error_t parse_vars(environment_t const& env) {
+  [[nodiscard]] parse_error_t parse_vars(internal::environment_t& env) {
     if (!try_with(lexer::symbol_t::var)) {
       return parse_error_ok_t{};
     }
@@ -533,7 +544,7 @@ private:
         return parse_error_name_redefined_t{.pre_defined = *prev_define, .cur_defined = id};
       }
 
-      env.vars->emplace_back(id);
+      env.vars.emplace_back(id);
 
       next();
       if (try_with(lexer::symbol_t::semicolon)) {
@@ -551,7 +562,41 @@ private:
     return parse_error_ok_t{};
   }
 
-  [[nodiscard]] std::variant<internal::in_t, parse_error_t> parse_in(environment_t const& env) {
+  [[nodiscard]] parse_error_t parse_procedures(internal::environment_t& env) {
+    while (try_with(lexer::symbol_t::proc)) {
+      next();
+      if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
+        return pe;
+      }
+      auto const id = *cur_token();
+      if (auto const prev_define = lookup_name(env, id); prev_define.has_value()) {
+        return parse_error_name_redefined_t{.pre_defined = *prev_define, .cur_defined = id};
+      }
+      next();
+
+      if (auto pe = must_be(lexer::symbol_t::semicolon); has_parse_error(pe)) {
+        return pe;
+      }
+      next();
+
+      internal::environment_t block_env{};
+      block_env.parent = &env;
+      block_env.ident = id;
+      if (auto pe = parse_block(block_env); has_parse_error(pe)) {
+        return pe;
+      }
+
+      if (auto pe = must_be(lexer::symbol_t::semicolon); has_parse_error(pe)) {
+        return pe;
+      }
+      next();
+
+      env.procedures.emplace_back(id, std::move(block_env));
+    }
+    return parse_error_ok_t{};
+  }
+
+  [[nodiscard]] std::variant<internal::in_t, parse_error_t> parse_in(internal::environment_t const& env) {
     next();
 
     if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
@@ -567,7 +612,7 @@ private:
     return internal::in_t{id};
   }
 
-  [[nodiscard]] std::variant<internal::out_t, parse_error_t> parse_out(environment_t const& env) {
+  [[nodiscard]] std::variant<internal::out_t, parse_error_t> parse_out(internal::environment_t const& env) {
     next();
 
     auto ret = parse_expression(env);
@@ -577,7 +622,7 @@ private:
     return internal::out_t{std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret))};
   }
 
-  [[nodiscard]] std::variant<internal::call_t, parse_error_t> parse_call(environment_t const& /*env*/) {
+  [[nodiscard]] std::variant<internal::call_t, parse_error_t> parse_call(internal::environment_t const& /*env*/) {
     next();
 
     if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
@@ -596,7 +641,7 @@ private:
     return internal::call_t{id};
   }
 
-  [[nodiscard]] std::variant<internal::becomes_t, parse_error_t> parse_becomes(environment_t const& env) {
+  [[nodiscard]] std::variant<internal::becomes_t, parse_error_t> parse_becomes(internal::environment_t const& env) {
     auto const id = *cur_token();
     if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
       return parse_error_name_undefined_t{.name = id};
@@ -616,7 +661,7 @@ private:
     return internal::becomes_t{id, std::move(std::get<std::unique_ptr<const internal::expression_t>>(expr))};
   }
 
-  [[nodiscard]] std::variant<internal::begin_end_t, parse_error_t> parse_begin_end(environment_t const& env) {
+  [[nodiscard]] std::variant<internal::begin_end_t, parse_error_t> parse_begin_end(internal::environment_t const& env) {
     std::vector<std::unique_ptr<const internal::statement_t>> statements;
     std::vector<std::unique_ptr<const internal::statement_t>> sub_statements;
     do {
@@ -638,7 +683,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::condition_t>, parse_error_t>
-  parse_condition(environment_t const& env) {
+  parse_condition(internal::environment_t const& env) {
     next();
     if (try_with(lexer::symbol_t::odd)) {
       next();
@@ -673,7 +718,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::statement_t>, parse_error_t>
-  parse_statement(environment_t const& env) {
+  parse_statement(internal::environment_t const& env) {
     if (try_with(lexer::symbol_t::in)) {
       auto ret = parse_in(env);
       if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
@@ -726,7 +771,7 @@ private:
     __builtin_unreachable();
   }
 
-  [[nodiscard]] std::variant<internal::if_then_t, parse_error_t> parse_if_then(environment_t const& env) {
+  [[nodiscard]] std::variant<internal::if_then_t, parse_error_t> parse_if_then(internal::environment_t const& env) {
     auto condition = parse_condition(env);
     if (auto const* pe = std::get_if<parse_error_t>(&condition); pe != nullptr) {
       return *pe;
@@ -746,7 +791,7 @@ private:
                                std::move(std::get<std::unique_ptr<const internal::statement_t>>(statement))};
   }
 
-  [[nodiscard]] std::variant<internal::while_do_t, parse_error_t> parse_while_do(environment_t const& env) {
+  [[nodiscard]] std::variant<internal::while_do_t, parse_error_t> parse_while_do(internal::environment_t const& env) {
     auto condition = parse_condition(env);
     if (auto const* pe = std::get_if<parse_error_t>(&condition); pe != nullptr) {
       return *pe;
@@ -767,7 +812,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::vector<std::unique_ptr<const internal::statement_t>>, parse_error_t>
-  parse_statements(environment_t const& env) {
+  parse_statements(internal::environment_t const& env) {
     std::vector<std::unique_ptr<const internal::statement_t>> statements;
     while (true) {
       if (!try_with_any_of({lexer::symbol_t::in, lexer::symbol_t::call, lexer::symbol_t::out, lexer::symbol_t::ident,
@@ -785,7 +830,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::expression_t>, parse_error_t>
-  parse_expression(environment_t const& env) {
+  parse_expression(internal::environment_t const& env) {
     std::vector<std::unique_ptr<const internal::expression_t>> expressions{};
     auto ret = parse_expression_primary(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
@@ -797,7 +842,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::expression_t>, parse_error_t>
-  parse_expression_primary(environment_t const& env) {
+  parse_expression_primary(internal::environment_t const& env) {
     if (try_with(lexer::symbol_t::minus)) {
       next();
       auto ret = parse_expression_without_leading_sign(env);
@@ -817,7 +862,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::expression_t>, parse_error_t>
-  parse_expression_without_leading_sign(environment_t const& env) {
+  parse_expression_without_leading_sign(internal::environment_t const& env) {
     if (auto pe = must_be_any_of({lexer::symbol_t::number, lexer::symbol_t::ident, lexer::symbol_t::lparen});
         has_parse_error(pe)) {
       return pe;
@@ -853,7 +898,7 @@ private:
   }
 
   [[nodiscard]] std::variant<std::unique_ptr<const internal::expression_t>, parse_error_t>
-  parse_expression_precedence_climbing(environment_t const& env,
+  parse_expression_precedence_climbing(internal::environment_t const& env,
                                        std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
                                        std::vector<lexer::token_t>& ops, int precedence) {
     static std::map<lexer::symbol_t, int> const precedences = {
@@ -913,7 +958,7 @@ private:
   }
 
   lexer::tokens_t m_tokens;
-  internal::program_t m_program;
+  internal::environment_t m_top_env;
 };
 } // namespace parser
 #endif
