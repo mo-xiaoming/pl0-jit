@@ -1,6 +1,6 @@
 init_llvm()
 
-add_library(pl0-jit-lib lexer.cpp annotation.cpp)
+add_library(pl0-jit-lib lexer.cpp parser.cpp annotation.cpp)
 target_link_libraries(pl0-jit-lib PUBLIC project_defaults)
 target_add_llvm(pl0-jit-lib "Support;Core;IRReader")
 install(TARGETS pl0-jit-lib EXPORT pl0-jit-lib-Targets
