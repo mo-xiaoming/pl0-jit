@@ -274,6 +274,19 @@ private:
   std::unique_ptr<const statement_t> m_statement;
 };
 
+struct while_do_t : statement_t {
+  while_do_t(std::unique_ptr<const condition_t>&& condition, std::unique_ptr<const statement_t>&& statement)
+      : m_condition(std::move(condition)), m_statement(std::move(statement)) {}
+
+  [[nodiscard]] std::string to_string() const override {
+    return info_str("while ", m_condition->to_string(), " do ", m_statement->to_string());
+  }
+
+private:
+  std::unique_ptr<const condition_t> m_condition;
+  std::unique_ptr<const statement_t> m_statement;
+};
+
 struct begin_end_t : statement_t {
   explicit begin_end_t(std::vector<std::unique_ptr<const statement_t>>&& statements)
       : m_statements(std::move(statements)) {}
@@ -703,6 +716,13 @@ private:
       }
       return std::make_unique<const internal::if_then_t>(std::move(std::get<internal::if_then_t>(ret)));
     }
+    if (try_with(lexer::symbol_t::while_)) {
+      auto ret = parse_while_do(env);
+      if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
+        return *pe;
+      }
+      return std::make_unique<const internal::while_do_t>(std::move(std::get<internal::while_do_t>(ret)));
+    }
     __builtin_unreachable();
   }
 
@@ -726,12 +746,32 @@ private:
                                std::move(std::get<std::unique_ptr<const internal::statement_t>>(statement))};
   }
 
+  [[nodiscard]] std::variant<internal::while_do_t, parse_error_t> parse_while_do(environment_t const& env) {
+    auto condition = parse_condition(env);
+    if (auto const* pe = std::get_if<parse_error_t>(&condition); pe != nullptr) {
+      return *pe;
+    }
+
+    if (auto const pe = must_be(lexer::symbol_t::do_); has_parse_error(pe)) {
+      return pe;
+    }
+    next();
+
+    auto statement = parse_statement(env);
+    if (auto const* pe = std::get_if<parse_error_t>(&statement); pe != nullptr) {
+      return *pe;
+    }
+
+    return internal::while_do_t{std::move(std::get<std::unique_ptr<const internal::condition_t>>(condition)),
+                                std::move(std::get<std::unique_ptr<const internal::statement_t>>(statement))};
+  }
+
   [[nodiscard]] std::variant<std::vector<std::unique_ptr<const internal::statement_t>>, parse_error_t>
   parse_statements(environment_t const& env) {
     std::vector<std::unique_ptr<const internal::statement_t>> statements;
     while (true) {
       if (!try_with_any_of({lexer::symbol_t::in, lexer::symbol_t::call, lexer::symbol_t::out, lexer::symbol_t::ident,
-                            lexer::symbol_t::begin, lexer::symbol_t::if_})
+                            lexer::symbol_t::begin, lexer::symbol_t::if_, lexer::symbol_t::while_})
                .has_value()) {
         break;
       }

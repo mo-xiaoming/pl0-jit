@@ -133,6 +133,10 @@ end
     {R"(if 3 <= 4 then
 begin !4 end.)",
      "if 3<=4 then begin\n!4\nend\n"},
+    {R"(while odd 3 do !4.)", "while odd 3 do !4\n"},
+    {R"(while 3 <= 4 do
+begin !4 end.)",
+     "while 3<=4 do begin\n!4\nend\n"},
     // expressions
     {R"(!3.)", "!3\n"},
     {R"(var x;!x.)", "var x\n!x\n"},
