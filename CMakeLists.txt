@@ -4,6 +4,7 @@ project(pl0-jit VERSION 0.1.0 DESCRIPTION "jitted pl0 compiler" HOMEPAGE_URL "ht
 include(GNUInstallDirs)
 
 include(cmake/ProjectDefaults.cmake)
+include(cmake/LLVMProject.cmake)
 
 list(APPEND CMAKE_CTEST_ARGUMENTS "--output-on-failure")
 find_package(GTest REQUIRED)
