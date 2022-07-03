@@ -81,10 +81,10 @@ parse_error_t parser_t::must_be(lexer::symbol_t s) const noexcept {
   return parse_error_early_eof_t{.expected = {s}};
 }
 
-std::optional<lexer::token_t> parser_t::lookup_name(internal::environment_t const& env, lexer::token_t const& name) {
+std::optional<lexer::token_t> parser_t::lookup_name(environment_t const& env, lexer::token_t const& name) {
   auto const find_name = [&name](auto const& container) -> std::optional<lexer::token_t> {
     if (auto const it = std::find_if(container.cbegin(), container.cend(),
-                                     [&name](auto const& e) { return internal::sv(name) == internal::sv(e.token()); });
+                                     [&name](auto const& e) { return sv(name) == sv(e.token()); });
         it != container.cend()) {
       return it->token();
     }
@@ -102,7 +102,7 @@ std::optional<lexer::token_t> parser_t::lookup_name(internal::environment_t cons
       return cur_env->ident;
     }
     if (auto const it = std::find_if(cur_env->procedures.cbegin(), cur_env->procedures.cend(),
-                                     [&name](auto const& p) { return internal::sv(p.token()) == internal::sv(name); });
+                                     [&name](auto const& p) { return sv(p.token()) == sv(name); });
         it != cur_env->procedures.cend()) {
       return it->token();
     }
@@ -117,7 +117,7 @@ parse_error_t parser_t::parse_program() {
   return must_be(lexer::symbol_t::period);
 }
 
-parse_error_t parser_t::parse_block(internal::environment_t& env) {
+parse_error_t parser_t::parse_block(environment_t& env) {
   if (auto pe = parse_consts(env); has_parse_error(pe)) {
     return pe;
   }
@@ -131,11 +131,11 @@ parse_error_t parser_t::parse_block(internal::environment_t& env) {
   if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
     return *pe;
   }
-  env.statements = std::move(std::get<std::vector<std::unique_ptr<const internal::statement_t>>>(ret));
+  env.statements = std::move(std::get<std::vector<std::unique_ptr<const statement_t>>>(ret));
   return parse_error_ok_t{};
 }
 
-parse_error_t parser_t::parse_consts(internal::environment_t& env) {
+parse_error_t parser_t::parse_consts(environment_t& env) {
   if (!try_with(lexer::symbol_t::const_)) {
     return parse_error_ok_t{};
   }
@@ -179,7 +179,7 @@ parse_error_t parser_t::parse_consts(internal::environment_t& env) {
   return parse_error_ok_t{};
 }
 
-parse_error_t parser_t::parse_vars(internal::environment_t& env) {
+parse_error_t parser_t::parse_vars(environment_t& env) {
   if (!try_with(lexer::symbol_t::var)) {
     return parse_error_ok_t{};
   }
@@ -212,7 +212,7 @@ parse_error_t parser_t::parse_vars(internal::environment_t& env) {
   return parse_error_ok_t{};
 }
 
-parse_error_t parser_t::parse_procedures(internal::environment_t& env) {
+parse_error_t parser_t::parse_procedures(environment_t& env) {
   while (try_with(lexer::symbol_t::proc)) {
     next();
     if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
@@ -229,7 +229,7 @@ parse_error_t parser_t::parse_procedures(internal::environment_t& env) {
     }
     next();
 
-    internal::environment_t block_env{};
+    environment_t block_env{};
     block_env.parent = &env;
     block_env.ident = id;
     if (auto pe = parse_block(block_env); has_parse_error(pe)) {
@@ -246,7 +246,7 @@ parse_error_t parser_t::parse_procedures(internal::environment_t& env) {
   return parse_error_ok_t{};
 }
 
-parser_t::result_t<internal::in_t> parser_t::parse_in(internal::environment_t const& env) {
+parser_t::result_t<in_t> parser_t::parse_in(environment_t const& env) {
   next();
 
   if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
@@ -259,20 +259,20 @@ parser_t::result_t<internal::in_t> parser_t::parse_in(internal::environment_t co
 
   next();
 
-  return internal::in_t{id};
+  return in_t{id};
 }
 
-parser_t::result_t<internal::out_t> parser_t::parse_out(internal::environment_t const& env) {
+parser_t::result_t<out_t> parser_t::parse_out(environment_t const& env) {
   next();
 
   auto ret = parse_expression(env);
   if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
     return *pe;
   }
-  return internal::out_t{std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret))};
+  return out_t{std::move(std::get<std::unique_ptr<const expression_t>>(ret))};
 }
 
-parser_t::result_t<internal::call_t> parser_t::parse_call(internal::environment_t const& /*env*/) {
+parser_t::result_t<call_t> parser_t::parse_call(environment_t const& /*env*/) {
   next();
 
   if (auto pe = must_be(lexer::symbol_t::ident); has_parse_error(pe)) {
@@ -282,10 +282,10 @@ parser_t::result_t<internal::call_t> parser_t::parse_call(internal::environment_
 
   next();
 
-  return internal::call_t{id};
+  return call_t{id};
 }
 
-parser_t::result_t<internal::becomes_t> parser_t::parse_becomes(internal::environment_t const& env) {
+parser_t::result_t<becomes_t> parser_t::parse_becomes(environment_t const& env) {
   auto const id = *cur_token();
   if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
     return parse_error_name_undefined_t{.name = id};
@@ -302,19 +302,19 @@ parser_t::result_t<internal::becomes_t> parser_t::parse_becomes(internal::enviro
     return *pe;
   }
 
-  return internal::becomes_t{id, std::move(std::get<std::unique_ptr<const internal::expression_t>>(expr))};
+  return becomes_t{id, std::move(std::get<std::unique_ptr<const expression_t>>(expr))};
 }
 
-parser_t::result_t<internal::begin_end_t> parser_t::parse_begin_end(internal::environment_t const& env) {
-  std::vector<std::unique_ptr<const internal::statement_t>> statements;
-  std::vector<std::unique_ptr<const internal::statement_t>> sub_statements;
+parser_t::result_t<begin_end_t> parser_t::parse_begin_end(environment_t const& env) {
+  std::vector<std::unique_ptr<const statement_t>> statements;
+  std::vector<std::unique_ptr<const statement_t>> sub_statements;
   do {
     next();
     auto ret = parse_statements(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    sub_statements = std::move(std::get<std::vector<std::unique_ptr<const internal::statement_t>>>(ret));
+    sub_statements = std::move(std::get<std::vector<std::unique_ptr<const statement_t>>>(ret));
     statements.insert(statements.end(), std::make_move_iterator(sub_statements.begin()),
                       std::make_move_iterator(sub_statements.end()));
   } while (try_with(lexer::symbol_t::semicolon));
@@ -323,10 +323,10 @@ parser_t::result_t<internal::begin_end_t> parser_t::parse_begin_end(internal::en
   }
   next();
 
-  return internal::begin_end_t{std::move(statements)};
+  return begin_end_t{std::move(statements)};
 }
 
-parser_t::ptr_result_t<internal::condition_t> parser_t::parse_condition(internal::environment_t const& env) {
+parser_t::ptr_result_t<condition_t> parser_t::parse_condition(environment_t const& env) {
   next();
   if (try_with(lexer::symbol_t::odd)) {
     next();
@@ -334,14 +334,13 @@ parser_t::ptr_result_t<internal::condition_t> parser_t::parse_condition(internal
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::odd_condition_t>(
-        std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret)));
+    return std::make_unique<const odd_condition_t>(std::move(std::get<std::unique_ptr<const expression_t>>(ret)));
   }
   auto ret = parse_expression(env);
   if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
     return *pe;
   }
-  auto lhs = std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret));
+  auto lhs = std::move(std::get<std::unique_ptr<const expression_t>>(ret));
 
   if (auto pe = must_be_any_of({lexer::symbol_t::equal, lexer::symbol_t::not_equal, lexer::symbol_t::less_equal,
                                 lexer::symbol_t::less, lexer::symbol_t::greater_equal, lexer::symbol_t::greater});
@@ -355,65 +354,65 @@ parser_t::ptr_result_t<internal::condition_t> parser_t::parse_condition(internal
   if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
     return *pe;
   }
-  auto rhs = std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret));
+  auto rhs = std::move(std::get<std::unique_ptr<const expression_t>>(ret));
 
-  return std::make_unique<const internal::cmp_condition_t>(op, std::move(lhs), std::move(rhs));
+  return std::make_unique<const cmp_condition_t>(op, std::move(lhs), std::move(rhs));
 }
 
-parser_t::ptr_result_t<internal::statement_t> parser_t::parse_statement(internal::environment_t const& env) {
+parser_t::ptr_result_t<statement_t> parser_t::parse_statement(environment_t const& env) {
   if (try_with(lexer::symbol_t::in)) {
     auto ret = parse_in(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::in_t>(std::move(std::get<internal::in_t>(ret)));
+    return std::make_unique<const in_t>(std::move(std::get<in_t>(ret)));
   }
   if (try_with(lexer::symbol_t::call)) {
     auto ret = parse_call(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::call_t>(std::move(std::get<internal::call_t>(ret)));
+    return std::make_unique<const call_t>(std::move(std::get<call_t>(ret)));
   }
   if (try_with(lexer::symbol_t::out)) {
     auto ret = parse_out(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::out_t>(std::move(std::get<internal::out_t>(ret)));
+    return std::make_unique<const out_t>(std::move(std::get<out_t>(ret)));
   }
   if (try_with(lexer::symbol_t::ident)) {
     auto ret = parse_becomes(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::becomes_t>(std::move(std::get<internal::becomes_t>(ret)));
+    return std::make_unique<const becomes_t>(std::move(std::get<becomes_t>(ret)));
   }
   if (try_with(lexer::symbol_t::begin)) {
     auto ret = parse_begin_end(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::begin_end_t>(std::move(std::get<internal::begin_end_t>(ret)));
+    return std::make_unique<const begin_end_t>(std::move(std::get<begin_end_t>(ret)));
   }
   if (try_with(lexer::symbol_t::if_)) {
     auto ret = parse_if_then(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::if_then_t>(std::move(std::get<internal::if_then_t>(ret)));
+    return std::make_unique<const if_then_t>(std::move(std::get<if_then_t>(ret)));
   }
   if (try_with(lexer::symbol_t::while_)) {
     auto ret = parse_while_do(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::while_do_t>(std::move(std::get<internal::while_do_t>(ret)));
+    return std::make_unique<const while_do_t>(std::move(std::get<while_do_t>(ret)));
   }
   __builtin_unreachable();
 }
 
-parser_t::result_t<internal::if_then_t> parser_t::parse_if_then(internal::environment_t const& env) {
+parser_t::result_t<if_then_t> parser_t::parse_if_then(environment_t const& env) {
   auto condition = parse_condition(env);
   if (auto const* pe = std::get_if<parse_error_t>(&condition); pe != nullptr) {
     return *pe;
@@ -429,11 +428,11 @@ parser_t::result_t<internal::if_then_t> parser_t::parse_if_then(internal::enviro
     return *pe;
   }
 
-  return internal::if_then_t{std::move(std::get<std::unique_ptr<const internal::condition_t>>(condition)),
-                             std::move(std::get<std::unique_ptr<const internal::statement_t>>(statement))};
+  return if_then_t{std::move(std::get<std::unique_ptr<const condition_t>>(condition)),
+                   std::move(std::get<std::unique_ptr<const statement_t>>(statement))};
 }
 
-parser_t::result_t<internal::while_do_t> parser_t::parse_while_do(internal::environment_t const& env) {
+parser_t::result_t<while_do_t> parser_t::parse_while_do(environment_t const& env) {
   auto condition = parse_condition(env);
   if (auto const* pe = std::get_if<parse_error_t>(&condition); pe != nullptr) {
     return *pe;
@@ -449,12 +448,12 @@ parser_t::result_t<internal::while_do_t> parser_t::parse_while_do(internal::envi
     return *pe;
   }
 
-  return internal::while_do_t{std::move(std::get<std::unique_ptr<const internal::condition_t>>(condition)),
-                              std::move(std::get<std::unique_ptr<const internal::statement_t>>(statement))};
+  return while_do_t{std::move(std::get<std::unique_ptr<const condition_t>>(condition)),
+                    std::move(std::get<std::unique_ptr<const statement_t>>(statement))};
 }
 
-parser_t::ptr_vec_result_t<internal::statement_t> parser_t::parse_statements(internal::environment_t const& env) {
-  std::vector<std::unique_ptr<const internal::statement_t>> statements;
+parser_t::ptr_vec_result_t<statement_t> parser_t::parse_statements(environment_t const& env) {
+  std::vector<std::unique_ptr<const statement_t>> statements;
   while (true) {
     if (!try_with_any_of({lexer::symbol_t::in, lexer::symbol_t::call, lexer::symbol_t::out, lexer::symbol_t::ident,
                           lexer::symbol_t::begin, lexer::symbol_t::if_, lexer::symbol_t::while_})
@@ -465,34 +464,34 @@ parser_t::ptr_vec_result_t<internal::statement_t> parser_t::parse_statements(int
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    statements.push_back(std::move(std::get<std::unique_ptr<const internal::statement_t>>(ret)));
+    statements.push_back(std::move(std::get<std::unique_ptr<const statement_t>>(ret)));
   }
   return statements;
 }
 
-parser_t::ptr_result_t<internal::expression_t> parser_t::parse_expression(internal::environment_t const& env) {
-  std::vector<std::unique_ptr<const internal::expression_t>> expressions{};
+parser_t::ptr_result_t<expression_t> parser_t::parse_expression(environment_t const& env) {
+  std::vector<std::unique_ptr<const expression_t>> expressions{};
   auto ret = parse_expression_primary(env);
   if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
     return *pe;
   }
-  expressions.push_back(std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret)));
+  expressions.push_back(std::move(std::get<std::unique_ptr<const expression_t>>(ret)));
   std::vector<lexer::token_t> ops{};
   return parse_expression_precedence_climbing(env, expressions, ops, 0);
 }
 
-parser_t::ptr_result_t<internal::expression_t> parser_t::parse_expression_primary(internal::environment_t const& env) {
+parser_t::ptr_result_t<expression_t> parser_t::parse_expression_primary(environment_t const& env) {
   if (try_with(lexer::symbol_t::minus)) {
     next();
     auto ret = parse_expression_without_leading_sign(env);
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    return std::make_unique<const internal::expression_binary_op_t>(
+    return std::make_unique<const expression_binary_op_t>(
         lexer::token_t{.symbol = lexer::symbol_t::times, .annotation = {.source = "*", .start = 0U, .length = 1U}},
-        std::make_unique<const internal::number_t>(lexer::token_t{
-            .symbol = lexer::symbol_t::number, .annotation = {.source = "-1", .start = 0U, .length = 2}}),
-        std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret)));
+        std::make_unique<const number_t>(lexer::token_t{.symbol = lexer::symbol_t::number,
+                                                        .annotation = {.source = "-1", .start = 0U, .length = 2}}),
+        std::move(std::get<std::unique_ptr<const expression_t>>(ret)));
   }
   if (try_with(lexer::symbol_t::plus)) {
     next();
@@ -500,15 +499,14 @@ parser_t::ptr_result_t<internal::expression_t> parser_t::parse_expression_primar
   return parse_expression_without_leading_sign(env);
 }
 
-parser_t::ptr_result_t<internal::expression_t>
-parser_t::parse_expression_without_leading_sign(internal::environment_t const& env) {
+parser_t::ptr_result_t<expression_t> parser_t::parse_expression_without_leading_sign(environment_t const& env) {
   if (auto pe = must_be_any_of({lexer::symbol_t::number, lexer::symbol_t::ident, lexer::symbol_t::lparen});
       has_parse_error(pe)) {
     return pe;
   }
 
   if (try_with(lexer::symbol_t::number)) {
-    auto ret = std::make_unique<const internal::number_t>(*cur_token());
+    auto ret = std::make_unique<const number_t>(*cur_token());
     next();
     return ret;
   }
@@ -517,7 +515,7 @@ parser_t::parse_expression_without_leading_sign(internal::environment_t const& e
     if (auto const prev_define = lookup_name(env, id); !prev_define.has_value()) {
       return parse_error_name_undefined_t{.name = id};
     }
-    auto ret = std::make_unique<const internal::ident_t>(id);
+    auto ret = std::make_unique<const ident_t>(id);
     next();
     return ret;
   }
@@ -531,14 +529,14 @@ parser_t::parse_expression_without_leading_sign(internal::environment_t const& e
       return pe;
     }
     next();
-    return std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret));
+    return std::move(std::get<std::unique_ptr<const expression_t>>(ret));
   }
   __builtin_unreachable();
 }
 
-parser_t::ptr_result_t<internal::expression_t>
-parser_t::parse_expression_precedence_climbing(internal::environment_t const& env,
-                                               std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
+parser_t::ptr_result_t<expression_t>
+parser_t::parse_expression_precedence_climbing(environment_t const& env,
+                                               std::vector<std::unique_ptr<const expression_t>>& expressions,
                                                std::vector<lexer::token_t>& ops, int precedence) {
   static std::map<lexer::symbol_t, int> const precedences = {
       {lexer::symbol_t::plus, 1},
@@ -564,7 +562,7 @@ parser_t::parse_expression_precedence_climbing(internal::environment_t const& en
       auto rhs = std::move(expressions.back());
       expressions.pop_back();
       auto lhs = std::move(expressions.back());
-      expressions.back() = std::make_unique<const internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
+      expressions.back() = std::make_unique<const expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
     } else {
       parse_expression_reduce_all(expressions, ops);
       precedence = it->second;
@@ -575,13 +573,13 @@ parser_t::parse_expression_precedence_climbing(internal::environment_t const& en
     if (auto const* pe = std::get_if<parse_error_t>(&ret); pe != nullptr) {
       return *pe;
     }
-    expressions.push_back(std::move(std::get<std::unique_ptr<const internal::expression_t>>(ret)));
+    expressions.push_back(std::move(std::get<std::unique_ptr<const expression_t>>(ret)));
   }
   parse_expression_reduce_all(expressions, ops);
   return std::move(expressions[0]);
 }
 
-void parser_t::parse_expression_reduce_all(std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
+void parser_t::parse_expression_reduce_all(std::vector<std::unique_ptr<const expression_t>>& expressions,
                                            std::vector<lexer::token_t>& ops) {
   // NOLINTNEXTLINE(hicpp-no-array-decay, cppcoreguidelines-pro-bounds-array-to-pointer-decay)
   assert(ops.size() + 1 == expressions.size());
@@ -591,7 +589,7 @@ void parser_t::parse_expression_reduce_all(std::vector<std::unique_ptr<const int
     auto lhs = std::move(expressions.back());
     auto const op = ops.back();
     ops.pop_back();
-    expressions.back() = std::make_unique<const internal::expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
+    expressions.back() = std::make_unique<const expression_binary_op_t>(op, std::move(lhs), std::move(rhs));
   }
 }
 } // namespace parser

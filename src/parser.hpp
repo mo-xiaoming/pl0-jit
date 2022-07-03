@@ -11,11 +11,9 @@
 #include <vector>
 
 namespace parser {
-namespace internal {
 [[nodiscard]] inline constexpr std::string_view sv(lexer::token_t const& token) noexcept {
   return to_sv(token.annotation);
 }
-} // namespace internal
 
 struct parse_error_ok_t {};
 struct parse_error_empty_file_t {};
@@ -43,7 +41,7 @@ struct parse_error_unexpected_t {
       os << sep << i;
       sep = ", ";
     }
-    os << ", but got " << internal::sv(pe.got) << '\n';
+    os << ", but got " << sv(pe.got) << '\n';
     return os << annotation_to_error_string(pe.got.annotation) << '\n';
   }
 };
@@ -52,7 +50,7 @@ struct parse_error_name_redefined_t {
   lexer::token_t cur_defined;
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, parse_error_name_redefined_t const& pe) {
-    return os << internal::sv(pe.cur_defined) << " previously defined at\n"
+    return os << sv(pe.cur_defined) << " previously defined at\n"
               << annotation_to_error_string(pe.pre_defined.annotation) << "redefined at\n"
               << annotation_to_error_string(pe.cur_defined.annotation);
   }
@@ -61,8 +59,7 @@ struct parse_error_name_undefined_t {
   lexer::token_t name;
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, parse_error_name_undefined_t const& pe) {
-    return os << internal::sv(pe.name) << " is undefined" << '\n'
-              << annotation_to_error_string(pe.name.annotation) << '\n';
+    return os << sv(pe.name) << " is undefined" << '\n' << annotation_to_error_string(pe.name.annotation) << '\n';
   }
 };
 using parse_error_t =
@@ -75,7 +72,6 @@ using parse_error_t =
   return !std::holds_alternative<parse_error_ok_t>(error);
 }
 
-namespace internal {
 template <typename T, typename... Ts> [[nodiscard]] std::string info_str(T&& v, Ts&&... vs) {
   return utils::str::to_str(std::forward<T>(v), std::forward<Ts>(vs)...);
 }
@@ -316,7 +312,6 @@ struct environment_t {
     return os;
   }
 };
-} // namespace internal
 
 struct parser_t {
   explicit parser_t(lexer::tokens_t tokens) noexcept : m_tokens(std::move(tokens)) {}
@@ -343,55 +338,53 @@ private:
   [[nodiscard]] parse_error_t must_be_any_of(std::initializer_list<lexer::symbol_t> ss);
   [[nodiscard]] parse_error_t must_be(lexer::symbol_t s) const noexcept;
 
-  [[nodiscard]] static std::optional<lexer::token_t> lookup_name(internal::environment_t const& env,
-                                                                 lexer::token_t const& name);
+  [[nodiscard]] static std::optional<lexer::token_t> lookup_name(environment_t const& env, lexer::token_t const& name);
 
   [[nodiscard]] parse_error_t parse_program();
 
-  [[nodiscard]] parse_error_t parse_block(internal::environment_t& env);
+  [[nodiscard]] parse_error_t parse_block(environment_t& env);
 
-  [[nodiscard]] parse_error_t parse_consts(internal::environment_t& env);
+  [[nodiscard]] parse_error_t parse_consts(environment_t& env);
 
-  [[nodiscard]] parse_error_t parse_vars(internal::environment_t& env);
+  [[nodiscard]] parse_error_t parse_vars(environment_t& env);
 
-  [[nodiscard]] parse_error_t parse_procedures(internal::environment_t& env);
+  [[nodiscard]] parse_error_t parse_procedures(environment_t& env);
 
-  [[nodiscard]] result_t<internal::in_t> parse_in(internal::environment_t const& env);
+  [[nodiscard]] result_t<in_t> parse_in(environment_t const& env);
 
-  [[nodiscard]] result_t<internal::out_t> parse_out(internal::environment_t const& env);
+  [[nodiscard]] result_t<out_t> parse_out(environment_t const& env);
 
-  [[nodiscard]] result_t<internal::call_t> parse_call(internal::environment_t const& /*env*/);
+  [[nodiscard]] result_t<call_t> parse_call(environment_t const& /*env*/);
 
-  [[nodiscard]] result_t<internal::becomes_t> parse_becomes(internal::environment_t const& env);
+  [[nodiscard]] result_t<becomes_t> parse_becomes(environment_t const& env);
 
-  [[nodiscard]] result_t<internal::begin_end_t> parse_begin_end(internal::environment_t const& env);
+  [[nodiscard]] result_t<begin_end_t> parse_begin_end(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::condition_t> parse_condition(internal::environment_t const& env);
+  [[nodiscard]] ptr_result_t<condition_t> parse_condition(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::statement_t> parse_statement(internal::environment_t const& env);
+  [[nodiscard]] ptr_result_t<statement_t> parse_statement(environment_t const& env);
 
-  [[nodiscard]] result_t<internal::if_then_t> parse_if_then(internal::environment_t const& env);
+  [[nodiscard]] result_t<if_then_t> parse_if_then(environment_t const& env);
 
-  [[nodiscard]] result_t<internal::while_do_t> parse_while_do(internal::environment_t const& env);
+  [[nodiscard]] result_t<while_do_t> parse_while_do(environment_t const& env);
 
-  [[nodiscard]] ptr_vec_result_t<internal::statement_t> parse_statements(internal::environment_t const& env);
+  [[nodiscard]] ptr_vec_result_t<statement_t> parse_statements(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::expression_t> parse_expression(internal::environment_t const& env);
+  [[nodiscard]] ptr_result_t<expression_t> parse_expression(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::expression_t> parse_expression_primary(internal::environment_t const& env);
+  [[nodiscard]] ptr_result_t<expression_t> parse_expression_primary(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::expression_t>
-  parse_expression_without_leading_sign(internal::environment_t const& env);
+  [[nodiscard]] ptr_result_t<expression_t> parse_expression_without_leading_sign(environment_t const& env);
 
-  [[nodiscard]] ptr_result_t<internal::expression_t>
-  parse_expression_precedence_climbing(internal::environment_t const& env,
-                                       std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
+  [[nodiscard]] ptr_result_t<expression_t>
+  parse_expression_precedence_climbing(environment_t const& env,
+                                       std::vector<std::unique_ptr<const expression_t>>& expressions,
                                        std::vector<lexer::token_t>& ops, int precedence);
 
-  static void parse_expression_reduce_all(std::vector<std::unique_ptr<const internal::expression_t>>& expressions,
+  static void parse_expression_reduce_all(std::vector<std::unique_ptr<const expression_t>>& expressions,
                                           std::vector<lexer::token_t>& ops);
   lexer::tokens_t m_tokens;
-  internal::environment_t m_top_env;
+  environment_t m_top_env;
 };
 } // namespace parser
 #endif
