@@ -86,9 +86,8 @@ struct parse_error_name_redefined_t {
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, parse_error_name_redefined_t const& pe) {
     return os << internal::sv(pe.cur_defined) << " previously defined at\n"
-              << annotation_to_error_string(pe.pre_defined.annotation) << '\n'
-              << "redefined at\n"
-              << annotation_to_error_string(pe.cur_defined.annotation) << '\n';
+              << annotation_to_error_string(pe.pre_defined.annotation) << "redefined at\n"
+              << annotation_to_error_string(pe.cur_defined.annotation);
   }
 };
 struct parse_error_name_undefined_t {
@@ -336,6 +335,8 @@ struct procedure_t {
 
   [[nodiscard]] std::string to_string() const { return info_str("procedure ", sv(m_ident), ';', *m_env, ';'); }
 
+  [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
+
 private:
   lexer::token_t m_ident;
   std::unique_ptr<environment_t> m_env;
@@ -480,6 +481,12 @@ private:
       }
       if (cur_env->parent != nullptr && cur_env->ident == name) {
         return cur_env->ident;
+      }
+      if (auto const it =
+              std::find_if(cur_env->procedures.cbegin(), cur_env->procedures.cend(),
+                           [&name](auto const& p) { return internal::sv(p.token()) == internal::sv(name); });
+          it != cur_env->procedures.cend()) {
+        return it->token();
       }
     }
     return std::nullopt;

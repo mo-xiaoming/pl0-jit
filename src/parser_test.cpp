@@ -144,6 +144,21 @@ begin
 end;
 call squ.)",
      "procedure xyz;const x=3\nvar squ\nbegin\nsqu:=(* x x)\nend\n;\ncall squ\n"},
+    {R"(
+procedure abc;
+var x;
+begin
+!x
+end;
+
+procedure xyz;
+var x;
+begin
+!x
+end;
+
+call squ.)",
+     "procedure abc;var x\nbegin\n!x\nend\n;\nprocedure xyz;var x\nbegin\n!x\nend\n;\ncall squ\n"},
     // expressions
     {R"(!3.)", "!3\n"},
     {R"(var x;!x.)", "var x\n!x\n"},
