@@ -74,6 +74,9 @@ struct source_cursor_t {
   using const_iterator = char const*;
   using iterator = const_iterator;
 
+  [[nodiscard]] constexpr std::string_view source() const noexcept { return m_content.value(); }
+  [[nodiscard]] constexpr std::size_t from_begin() const noexcept { return m_cur_pos.value(); }
+
   [[nodiscard]] constexpr const_iterator begin() const noexcept { return m_content.value(); }
   [[nodiscard]] constexpr const_iterator end() const noexcept { return m_content.value() + m_size.value(); }
   [[nodiscard]] constexpr const_iterator cbegin() const noexcept { return m_content.value(); }

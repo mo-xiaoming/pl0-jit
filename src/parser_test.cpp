@@ -13,7 +13,7 @@ TEST(ParserTestSuite, EmptyFile) {
 
   auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
-  EXPECT_TRUE(!!std::get_if<parser::parse_error_empty_file_t>(&result));
+  ASSERT_TRUE(std::holds_alternative<parser::parse_error_empty_file_t>(result)) << "actual parse_error_t: " << result;
 }
 
 namespace {
@@ -135,7 +135,7 @@ begin !4 end.)",
      "if 3<=4 then begin\n!4\nend\n"},
     // expressions
     {R"(!3.)", "!3\n"},
-    {R"(!x.)", "!x\n"},
+    {R"(var x;!x.)", "var x\n!x\n"},
     {R"(!+42.)", "!42\n"},
     {R"(!-42.)", "!(* -1 42)\n"},
     {R"(var x;!+x.)", "var x\n!x\n"},
@@ -176,6 +176,6 @@ TEST_P(ParserTestSuite, Basic) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(source));
   auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
-  EXPECT_TRUE(!!std::get_if<parser::parse_error_ok_t>(&result));
+  ASSERT_TRUE(std::holds_alternative<parser::parse_error_ok_t>(result)) << "actual parse_error_t: " << result;
   EXPECT_EQ(utils::str::to_str(parser), expected);
 }

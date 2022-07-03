@@ -27,7 +27,7 @@ lex_result_t lex(source_cursor_t cursor) {
   auto tokens = tokens_t();
 
   auto const add_n_chars_token = [&tokens](source_cursor_t const& csr, symbol_t sym, std::size_t n) {
-    tokens.emplace_back(sym, annotation_t{csr.cur_iter(), n});
+    tokens.emplace_back(sym, annotation_t{.source = csr.source(), .start = csr.from_begin(), .length = n});
     return csr.advance(source_nth_t(n));
   };
   auto const add_ident_or_keyword_token = [&add_n_chars_token](source_cursor_t const& csr, std::string_view ident) {
@@ -85,7 +85,7 @@ lex_result_t lex(source_cursor_t cursor) {
         cursor = add_n_chars_token(cursor, symbol_t::becomes, 2U);
       } else {
         return lex_unexpected_char_t{
-            .annotation = annotation_t{.start = cursor.cur_iter(), .length = 2U},
+            .annotation = annotation_t{.source = cursor.source(), .start = cursor.from_begin(), .length = 2U},
             .expected = ":=",
         };
       }
@@ -97,7 +97,8 @@ lex_result_t lex(source_cursor_t cursor) {
       cursor = add_ident_or_keyword_token(cursor, ident);
     } else {
       if (!utils::chars::isspace_s(c)) {
-        return lex_unknown_char_t{.annotation = annotation_t{.start = cursor.cur_iter(), .length = 1U}};
+        return lex_unknown_char_t{
+            .annotation = annotation_t{.source = cursor.source(), .start = cursor.from_begin(), .length = 1U}};
       }
       cursor = cursor.advance(source_nth_t(1U));
     }

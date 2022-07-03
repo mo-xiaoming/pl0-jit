@@ -83,12 +83,12 @@ enum class symbol_t {
 
 inline std::ostream& operator<<(std::ostream& os, symbol_t sym) { return os << stringify_symbol(sym); }
 
-struct token_t {
+struct token_t { // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
   symbol_t symbol;
   annotation_t annotation;
 
   [[nodiscard]] friend constexpr bool operator==(token_t const& lhs, token_t const& rhs) noexcept = default;
-  friend std::ostream& operator<<(std::ostream& os, token_t const& v) {
+  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, token_t const& v) {
     return os << "{ .symbol_t=" << v.symbol << ", .annotation_t=" << v.annotation << " }";
   }
 };
