@@ -7,7 +7,7 @@ install(TARGETS pl0-jit-lib EXPORT pl0-jit-lib-Targets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-add_executable(pl0-jit-test lexer_test.cpp parser_test.cpp)
+add_executable(pl0-jit-test lexer_test.cpp parser_test.cpp codegen_test.cpp)
 target_link_libraries(pl0-jit-test PRIVATE pl0-jit-lib GTest::gtest GTest::gtest_main)
 gtest_discover_tests(pl0-jit-test)
 install(TARGETS pl0-jit-test EXPORT pl0-jit-test-Targets

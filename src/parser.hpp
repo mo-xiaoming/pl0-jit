@@ -4,6 +4,7 @@
 #include "lexer_symbols.hpp"
 #include "utils/strings.hpp"
 
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -258,6 +259,10 @@ struct const_t {
 
   [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
 
+  template <typename Visitor> void accept(Visitor&& visitor) const {
+    std::invoke(std::forward<Visitor>(visitor), *this, m_ident, m_num);
+  }
+
 private:
   lexer::token_t m_ident;
   lexer::token_t m_num;
@@ -296,6 +301,12 @@ struct environment_t {
   std::vector<procedure_t> procedures;
   std::vector<std::unique_ptr<const statement_t>> statements;
 
+  template <typename Visitor> void accept(Visitor&& visitor) const {
+    for (auto const& c : consts) {
+      c.accept(std::forward<Visitor>(visitor));
+    }
+  }
+
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, environment_t const& program) {
     for (auto const& c : program.consts) {
       os << c.to_string() << '\n';
@@ -315,6 +326,8 @@ struct environment_t {
 
 struct ast_t {
   explicit ast_t(environment_t&& top_env) : m_top_env(std::move(top_env)) {}
+
+  template <typename Visitor> void accept(Visitor&& visitor) const { m_top_env.accept(std::forward<Visitor>(visitor)); }
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, ast_t const& ast) { return os << ast.m_top_env; }
 

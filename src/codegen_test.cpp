@@ -1,16 +1,33 @@
+#include "codegen.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "utils_for_test.hpp"
 
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
-#include <variant>
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
-TEST(ParserTestSuite, EmptyFile) {
+TEST(CodegenTestSuite, Basic) {
+  const std::string_view source = "const a = 3;.";
+
+  auto const tokens = std::get<lexer::tokens_t>(lex_string(source));
+  auto parser = parser::parser_t{tokens};
+  auto const result = parser.parse();
+  ASSERT_TRUE(std::holds_alternative<parser::ast_t>(result))
+      << "got error: " << std::get<parser::parse_error_t>(result);
+  auto const& ast = std::get<parser::ast_t>(result);
+  EXPECT_EQ(utils::str::to_str(ast), "const a=3\n");
+
+  auto codegen = codegen::codegen_t{};
+  codegen.generate(ast);
+}
+
+#if 0
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
+TEST(CodegenTestSuite, EmptyFile) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(R"()"));
 
-  auto parser = parser::parser_t{tokens};
+  auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
   ASSERT_TRUE(std::holds_alternative<parser::parse_error_t>(result));
   auto const pe = std::get<parser::parse_error_t>(result);
@@ -192,20 +209,21 @@ call squ.)",
     {R"(var a,b,c,abc;abc:=3+a-b*c.)", "var a\nvar b\nvar c\nvar abc\nabc:=(- (+ 3 a) (* b c))\n"},
 };
 } // namespace
-struct ParserTestSuite : public testing::TestWithParam<test_data_t> {};
+struct CodegenTestSuite : public testing::TestWithParam<test_data_t> {};
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
-INSTANTIATE_TEST_SUITE_P(BasicData, ParserTestSuite, testing::ValuesIn(test_data));
+INSTANTIATE_TEST_SUITE_P(BasicData, CodegenTestSuite, testing::ValuesIn(test_data));
 
 // NOLINTNEXTLINE(cppcoreguidelines*, hicpp-special-member-functions)
-TEST_P(ParserTestSuite, Basic) {
+TEST_P(CodegenTestSuite, Basic) {
   auto const [source, expected] = GetParam();
 
   auto const tokens = std::get<lexer::tokens_t>(lex_string(source));
-  auto parser = parser::parser_t{tokens};
+  auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
   ASSERT_TRUE(std::holds_alternative<parser::ast_t>(result))
       << "got error: " << std::get<parser::parse_error_t>(result);
   auto const& ast = std::get<parser::ast_t>(result);
   EXPECT_EQ(utils::str::to_str(ast), expected);
 }
+#endif
