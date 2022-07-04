@@ -34,7 +34,7 @@ std::variant<ast_t, parse_error_t> parser_t::parse() {
   if (auto pe = parse_program(); has_parse_error(pe)) {
     return pe;
   }
-  return std::move(m_top_env);
+  return ast_t{std::move(m_top_env)};
 };
 
 std::optional<const lexer::token_t> parser_t::cur_token() const noexcept {

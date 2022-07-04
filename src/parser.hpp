@@ -296,7 +296,7 @@ struct environment_t {
   std::vector<procedure_t> procedures;
   std::vector<std::unique_ptr<const statement_t>> statements;
 
-  friend std::ostream& operator<<(std::ostream& os, environment_t const& program) {
+  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, environment_t const& program) {
     for (auto const& c : program.consts) {
       os << c.to_string() << '\n';
     }
@@ -313,7 +313,14 @@ struct environment_t {
   }
 };
 
-using ast_t = environment_t;
+struct ast_t {
+  explicit ast_t(environment_t&& top_env) : m_top_env(std::move(top_env)) {}
+
+  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, ast_t const& ast) { return os << ast.m_top_env; }
+
+private:
+  environment_t m_top_env;
+};
 
 struct parser_t {
   explicit parser_t(lexer::tokens_t tokens) noexcept : m_tokens(std::move(tokens)) {}
