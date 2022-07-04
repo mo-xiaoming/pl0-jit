@@ -30,3 +30,10 @@ factor =
     | number
     | "(" expression ")" .
 ```
+
+## Limitations
+
+Too lazy to fix them
+
+1. `const` doesn't accept negative number
+2. No line numbers on error messages

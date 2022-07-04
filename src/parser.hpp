@@ -275,6 +275,10 @@ struct var_t {
 
   [[nodiscard]] lexer::token_t const& token() const noexcept { return m_ident; }
 
+  template <typename Visitor> void accept(Visitor&& visitor) const {
+    std::invoke(std::forward<Visitor>(visitor), *this, m_ident);
+  }
+
 private:
   lexer::token_t m_ident;
 };
@@ -304,6 +308,9 @@ struct environment_t {
   template <typename Visitor> void accept(Visitor&& visitor) const {
     for (auto const& c : consts) {
       c.accept(std::forward<Visitor>(visitor));
+    }
+    for (auto const& v : vars) {
+      v.accept(std::forward<Visitor>(visitor));
     }
   }
 

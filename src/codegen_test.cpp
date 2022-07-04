@@ -8,7 +8,7 @@
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-owning-memory)
 TEST(CodegenTestSuite, Basic) {
-  const std::string_view source = "const a = 3;.";
+  const std::string_view source = "const a = 3;var b;.";
 
   auto const tokens = std::get<lexer::tokens_t>(lex_string(source));
   auto parser = parser::parser_t{tokens};
@@ -16,10 +16,9 @@ TEST(CodegenTestSuite, Basic) {
   ASSERT_TRUE(std::holds_alternative<parser::ast_t>(result))
       << "got error: " << std::get<parser::parse_error_t>(result);
   auto const& ast = std::get<parser::ast_t>(result);
-  EXPECT_EQ(utils::str::to_str(ast), "const a=3\n");
+  EXPECT_EQ(utils::str::to_str(ast), "const a=3\nvar b\n");
 
-  auto codegen = codegen::codegen_t{};
-  codegen.generate(ast);
+  codegen::generate(ast);
 }
 
 #if 0
