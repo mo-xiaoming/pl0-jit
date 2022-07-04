@@ -313,14 +313,12 @@ struct environment_t {
   }
 };
 
+using ast_t = environment_t;
+
 struct parser_t {
   explicit parser_t(lexer::tokens_t tokens) noexcept : m_tokens(std::move(tokens)) {}
 
-  [[nodiscard]] parse_error_t parse();
-
-  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, parser_t const& parser) {
-    return os << parser.m_top_env;
-  }
+  [[nodiscard]] std::variant<ast_t, parse_error_t> parse();
 
 private:
   template <typename R> using result_t = std::variant<R, parse_error_t>;

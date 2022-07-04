@@ -12,7 +12,9 @@ TEST(ParserTestSuite, EmptyFile) {
 
   auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
-  ASSERT_TRUE(std::holds_alternative<parser::parse_error_empty_file_t>(result)) << "actual parse_error_t: " << result;
+  ASSERT_TRUE(std::holds_alternative<parser::parse_error_t>(result));
+  auto const pe = std::get<parser::parse_error_t>(result);
+  ASSERT_TRUE(std::holds_alternative<parser::parse_error_empty_file_t>(pe));
 }
 
 namespace {
@@ -202,6 +204,8 @@ TEST_P(ParserTestSuite, Basic) {
   auto const tokens = std::get<lexer::tokens_t>(lex_string(source));
   auto parser = parser::parser_t(tokens);
   auto const result = parser.parse();
-  ASSERT_TRUE(std::holds_alternative<parser::parse_error_ok_t>(result)) << "actual parse_error_t: " << result;
-  EXPECT_EQ(utils::str::to_str(parser), expected);
+  ASSERT_TRUE(std::holds_alternative<parser::ast_t>(result))
+      << "got error: " << std::get<parser::parse_error_t>(result);
+  auto const& ast = std::get<parser::ast_t>(result);
+  EXPECT_EQ(utils::str::to_str(ast), expected);
 }

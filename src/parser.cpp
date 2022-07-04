@@ -26,12 +26,15 @@ std::ostream& operator<<(std::ostream& os, parse_error_t const& pe) {
       pe);
 }
 
-parse_error_t parser_t::parse() {
+std::variant<ast_t, parse_error_t> parser_t::parse() {
   if (m_tokens.empty()) {
     return parse_error_empty_file_t{};
   }
 
-  return parse_program();
+  if (auto pe = parse_program(); has_parse_error(pe)) {
+    return pe;
+  }
+  return std::move(m_top_env);
 };
 
 std::optional<const lexer::token_t> parser_t::cur_token() const noexcept {
