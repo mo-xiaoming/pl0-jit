@@ -36,4 +36,15 @@ factor =
 Too lazy to fix them
 
 1. `const` doesn't accept negative number
-2. No line numbers on error messages
+2. No line numbers on error messages, just something like,
+
+    ```
+    parse_error_unexpected_t: expected number, but got -
+         00|const a = -3;.
+                      ^
+    ```
+3. Can do better with function redefinitions error, just like variable redefinitions
+
+    ```
+    example
+    ```

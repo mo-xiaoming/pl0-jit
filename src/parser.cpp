@@ -1,6 +1,10 @@
 #include "parser.hpp"
+#include "codegen.hpp"
 
 #include <cassert>
+#include <charconv>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
 #include <map>
 
 namespace parser {
@@ -24,6 +28,141 @@ std::ostream& operator<<(std::ostream& os, parse_error_t const& pe) {
         }
       },
       pe);
+}
+
+llvm::Value* expression_binary_op_t::codegen(codegen::codegen_t& cg) const {
+  auto* lhs = m_lhs->codegen(cg);
+  auto* rhs = m_rhs->codegen(cg);
+
+  using enum lexer::symbol_t;
+  switch (m_op.symbol) {
+  case plus:
+    return cg.m_builder.CreateAdd(lhs, rhs, "addtmp");
+  case minus:
+    return cg.m_builder.CreateSub(lhs, rhs, "subtmp");
+  case times:
+    return cg.m_builder.CreateMul(lhs, rhs, "multmp");
+  case divide:
+    return cg.m_builder.CreateSDiv(lhs, rhs, "divtmp");
+  default:
+    __builtin_unreachable();
+  }
+}
+
+llvm::Value* number_t::codegen(codegen::codegen_t& cg) const {
+  return llvm::ConstantInt::get(cg.m_int_type, sv(m_value), 10);
+}
+
+llvm::Value* ident_t::codegen(codegen::codegen_t& cg) const {
+  if (auto* value = cg.find_const(sv(m_name)); value != nullptr) {
+    return value;
+  }
+  if (auto* value = cg.find_var(sv(m_name)); value != nullptr) {
+    return cg.m_builder.CreateLoad(cg.m_int_type, value, sv(m_name));
+  }
+  return nullptr;
+}
+
+void call_t::codegen(codegen::codegen_t& cg) const {
+  auto* func = cg.find_function(parser::sv(m_ident));
+  cg.m_builder.CreateCall(func);
+}
+
+void in_t::codegen(codegen::codegen_t& /*cg*/) const {}
+
+void out_t::codegen(codegen::codegen_t& cg) const {
+  auto* func = cg.find_function("out");
+
+  cg.m_builder.CreateCall(func, {m_expression->codegen(cg)});
+}
+
+void becomes_t::codegen(codegen::codegen_t& cg) const {
+  if (auto* value = cg.find_var(sv(m_name)); value != nullptr) {
+    cg.m_builder.CreateStore(value, m_expression->codegen(cg));
+  }
+}
+
+llvm::Value* odd_condition_t::codegen(codegen::codegen_t& cg) const {
+  return cg.m_builder.CreateICmpNE(m_expression->codegen(cg), cg.m_builder.getInt64(0), "oddtmp");
+}
+
+llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
+  auto* lhs = m_lhs->codegen(cg);
+  auto* rhs = m_rhs->codegen(cg);
+
+  using enum lexer::symbol_t;
+  switch (m_op.symbol) {
+  case greater:
+    return cg.m_builder.CreateICmpSGT(lhs, rhs, "gttmp");
+  case greater_equal:
+    return cg.m_builder.CreateICmpSGE(lhs, rhs, "getmp");
+  case less:
+    return cg.m_builder.CreateICmpSLT(lhs, rhs, "lttmp");
+  case less_equal:
+    return cg.m_builder.CreateICmpSGE(lhs, rhs, "letmp");
+  case equal:
+    return cg.m_builder.CreateICmpEQ(lhs, rhs, "eqtmp");
+  case not_equal:
+    return cg.m_builder.CreateICmpNE(lhs, rhs, "netmp");
+  default:
+    __builtin_unreachable();
+  }
+}
+
+void if_then_t::codegen(codegen::codegen_t& cg) const {
+  auto* cond = m_condition->codegen(cg);
+  auto* fn = cg.m_builder.GetInsertBlock()->getParent();
+  auto* bb_then = llvm::BasicBlock::Create(cg.m_context, "ifthen", fn);
+  auto* bb_phi = llvm::BasicBlock::Create(cg.m_context, "ifphi");
+  cg.m_builder.CreateCondBr(cond, bb_then, bb_phi);
+
+  cg.m_builder.SetInsertPoint(bb_then);
+  m_statement->codegen(cg);
+  cg.m_builder.CreateBr(bb_phi);
+  fn->getBasicBlockList().push_back(bb_phi);
+  cg.m_builder.SetInsertPoint(bb_phi);
+}
+
+void while_do_t::codegen(codegen::codegen_t& cg) const {
+  auto* bb_cond = llvm::BasicBlock::Create(cg.m_context, "whilecond");
+  cg.m_builder.CreateBr(bb_cond);
+
+  auto* fn = cg.m_builder.GetInsertBlock()->getParent();
+  fn->getBasicBlockList().push_back(bb_cond);
+  cg.m_builder.SetInsertPoint(bb_cond);
+
+  auto* cond = m_condition->codegen(cg);
+
+  auto* bb_body = llvm::BasicBlock::Create(cg.m_context, "whilebody", fn);
+  auto* bb_phi = llvm::BasicBlock::Create(cg.m_context, "whilephi", fn);
+  cg.m_builder.CreateCondBr(cond, bb_body, bb_phi);
+
+  cg.m_builder.SetInsertPoint(bb_body);
+  m_statement->codegen(cg);
+
+  cg.m_builder.CreateBr(bb_cond);
+  fn->getBasicBlockList().push_back(bb_phi);
+  cg.m_builder.SetInsertPoint(bb_phi);
+}
+
+void begin_end_t::codegen(codegen::codegen_t& cg) const {
+  for (auto const& s : m_statements) {
+    s->codegen(cg);
+  }
+}
+
+template <std::integral NumberType = std::int64_t> std::optional<NumberType> make_a_number(std::string const& s) {
+  NumberType value = 0;
+  auto [ptr, ec] = std::from_chars(s.c_str(), s.c_str() + s.size(), value);
+  if (ec == std::errc()) {
+    return value;
+  }
+  if (ec == std::errc::invalid_argument) {
+    std::cerr << s << " is not a valid number\n";
+  } else if (ec == std::errc::result_out_of_range) {
+    std::cerr << s << " is out of range\n";
+  }
+  return std::nullopt;
 }
 
 std::variant<ast_t, parse_error_t> parser_t::parse() {
