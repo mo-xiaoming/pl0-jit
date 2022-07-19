@@ -2,7 +2,7 @@ init_llvm()
 
 add_library(pl0-jit-lib lexer.cpp parser.cpp annotation.cpp)
 target_link_libraries(pl0-jit-lib PUBLIC project_defaults)
-target_add_llvm(pl0-jit-lib "Support;Core;IRReader;MCJIT")
+target_add_llvm(pl0-jit-lib "core;native;mcjit")
 install(TARGETS pl0-jit-lib EXPORT pl0-jit-lib-Targets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -14,6 +14,6 @@ install(TARGETS pl0-jit-test EXPORT pl0-jit-test-Targets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 add_executable(pl0-jit main.cpp)
-target_link_libraries(pl0-jit PRIVATE project_defaults pl0-jit-lib)
+target_link_libraries(pl0-jit PRIVATE pl0-jit-lib)
 install(TARGETS pl0-jit EXPORT pl0-jit-Targets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

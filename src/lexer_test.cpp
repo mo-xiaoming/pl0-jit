@@ -20,7 +20,7 @@ TEST(LexerTestSuite, NonExistSourceFileShouldReturnFileUnreadableError) {
   auto const exists = std::filesystem::exists(mock_source_path, err);
   ASSERT_TRUE(!exists && !err) << "exists: " << exists << ", err: " << err.message();
 
-  auto const ret = lexer::lex_source_file(mock_source_path);
+  auto const& [_, ret] = lexer::lex_source_file(mock_source_path);
   auto const* const error = std::get_if<lexer::lex_error_file_unreadable_t>(&ret);
   ASSERT_NE(error, nullptr);
   ASSERT_EQ(error->source_path, mock_source_path);

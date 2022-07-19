@@ -1,5 +1,21 @@
 #include "parser.hpp"
-#include "codegen.hpp"
+
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/ValueSymbolTable.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/TargetSelect.h>
 
 #include <cassert>
 #include <charconv>
@@ -7,6 +23,187 @@
 #include <llvm/IR/Function.h>
 #include <map>
 
+namespace codegen {
+struct scope_t {
+  std::size_t m_parent = std::numeric_limits<std::size_t>::max();
+  std::string_view name;
+  std::map<std::string_view, llvm::ConstantInt*> m_consts;
+  std::map<std::string_view, llvm::AllocaInst*> m_vars;
+  std::map<std::string_view, llvm::Function*> m_funcs;
+
+  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, scope_t const& c) {
+    os << "const table\n";
+    for (auto const& p : c.m_consts) {
+      os << "  " << p.first << ':' << llvm::dyn_cast<llvm::ConstantInt>(p.second)->getSExtValue() << '\n';
+    }
+    os << "var table\n";
+    for (auto const& p : c.m_vars) {
+      os << "  " << p.first << ':' << llvm::dyn_cast<llvm::ConstantInt>(p.second)->getSExtValue() << '\n';
+    }
+    os << "func table\n";
+    for (auto const& p : c.m_funcs) {
+      os << "  " << p.first << ':' << static_cast<void const*>(p.second) << '\n';
+    }
+    return os;
+  }
+};
+
+namespace {
+[[nodiscard]] bool has_parent(scope_t const& scope) {
+  return scope.m_parent != std::numeric_limits<decltype(scope.m_parent)>::max();
+}
+} // namespace
+
+struct codegen_t {
+  codegen_t() {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    auto* out_fn = create_std_out();
+    add_fn_to_scope("out", out_fn);
+  }
+
+  void compile_env(parser::environment_t const& env) {
+    for (auto const& c : env.consts) {
+      add_const_to_scope(parser::sv(c.m_ident), llvm::ConstantInt::get(m_int_type, parser::sv(c.m_num), 10));
+    }
+    for (auto const& v : env.vars) {
+      add_var_to_scope(parser::sv(v.m_ident), m_builder->CreateAlloca(m_int_type, nullptr, parser::sv(v.m_ident)));
+    }
+    for (auto const& p : env.procedures) {
+      auto* proto = llvm::FunctionType::get(llvm::Type::getVoidTy(*m_context), /*isVarArg*/ false);
+
+      auto* fn = llvm::Function::Create(proto, llvm::Function::ExternalLinkage, parser::sv(p.m_ident), m_module.get());
+      auto* bb_prev = m_builder->GetInsertBlock();
+      auto* bb = llvm::BasicBlock::Create(*m_context, "entry", fn);
+      if (bb == nullptr) {
+        fn->eraseFromParent();
+        assert(false); // NOLINT
+      }
+      m_builder->SetInsertPoint(bb);
+
+      m_scopes.emplace_back();
+      m_scopes.back().m_parent = m_cur_scope;
+      m_cur_scope = m_scopes.size() - 1;
+      m_scopes[m_cur_scope].name = parser::sv(p.m_ident);
+      compile_env(*p.m_env);
+      m_cur_scope = m_scopes[m_cur_scope].m_parent;
+
+      m_builder->CreateRetVoid();
+
+      if (llvm::verifyFunction(*fn, &llvm::errs())) {
+        fn->eraseFromParent();
+        assert(false); // NOLINT
+      }
+
+      m_builder->SetInsertPoint(bb_prev);
+
+      add_fn_to_scope(parser::sv(p.m_ident), fn);
+    }
+    for (auto const& s : env.statements) {
+      s->codegen(*this);
+    }
+  }
+
+  llvm::Function* create_std_out() {
+    auto* out =
+        dyn_cast<llvm::Function>(m_module->getOrInsertFunction("out", m_builder->getVoidTy(), m_int_type).getCallee());
+
+    auto* bb = llvm::BasicBlock::Create(*m_context, "entry", out);
+    m_builder->SetInsertPoint(bb);
+
+    auto printf_fn = m_module->getOrInsertFunction(
+        "printf", llvm::FunctionType::get(m_builder->getInt32Ty(), llvm::PointerType::get(m_builder->getInt8Ty(), 0),
+                                          /*isVarArg*/ true));
+    auto* val = &*out->arg_begin();
+    auto* fmt = m_builder->CreateGlobalStringPtr("%ld\n", "printffmt");
+    m_builder->CreateCall(printf_fn, {fmt, val});
+    m_builder->CreateRetVoid();
+
+    if (llvm::verifyFunction(*out, &llvm::errs())) {
+      return nullptr;
+    }
+    return out;
+  }
+
+  std::unique_ptr<llvm::LLVMContext> m_context{std::make_unique<llvm::LLVMContext>()};
+  std::unique_ptr<llvm::Module> m_module{std::make_unique<llvm::Module>("jit-main-module", *m_context)};
+  std::unique_ptr<llvm::IRBuilder<>> m_builder{std::make_unique<llvm::IRBuilder<>>(*m_context)};
+
+  llvm::IntegerType* m_int_type = m_builder->getInt64Ty();
+
+  void add_fn_to_scope(std::string_view name, llvm::Function* fn) {
+    assert(fn != nullptr); // NOLINT
+    m_scopes[m_cur_scope].m_funcs[name] = fn;
+  }
+  void add_const_to_scope(std::string_view name, llvm::ConstantInt* value) {
+    assert(value != nullptr); // NOLINT
+    m_scopes[m_cur_scope].m_consts[name] = value;
+  }
+  void add_var_to_scope(std::string_view name, llvm::AllocaInst* value) {
+    assert(value != nullptr); // NOLINT
+    m_scopes[m_cur_scope].m_vars[name] = value;
+  }
+
+  template <typename R, typename C> R* find_name(C const& c, std::string_view name) {
+    if (auto const it = std::find_if(c.cbegin(), c.cend(), [name](auto const& p) { return p.first == name; });
+        it != c.cend()) {
+      return it->second;
+    }
+    return nullptr;
+  };
+
+  llvm::ConstantInt* find_const(std::string_view name) {
+    auto const* cur_scope = &m_scopes[m_cur_scope];
+    while (true) {
+      if (auto* v = find_name<llvm::ConstantInt>(cur_scope->m_consts, name); v != nullptr) {
+        return v;
+      }
+      if (!has_parent(*cur_scope)) {
+        break;
+      }
+      cur_scope = &m_scopes[cur_scope->m_parent];
+    };
+    return nullptr;
+  }
+
+  llvm::AllocaInst* find_var(std::string_view name) {
+    auto const* cur_scope = &m_scopes[m_cur_scope];
+    while (true) {
+      if (auto* v = find_name<llvm::AllocaInst>(cur_scope->m_vars, name); v != nullptr) {
+        return v;
+      }
+      if (!has_parent(*cur_scope)) {
+        break;
+      }
+      cur_scope = &m_scopes[cur_scope->m_parent];
+    };
+    return nullptr;
+  }
+
+  llvm::Function* find_function(std::string_view name) {
+    auto const* cur_scope = &m_scopes[m_cur_scope];
+    while (true) {
+      // current procedure
+      // don't support recursion
+      if (cur_scope->m_parent != std::numeric_limits<std::size_t>::max() && cur_scope->name == name) {
+        return nullptr;
+      }
+      if (auto* v = find_name<llvm::Function>(cur_scope->m_funcs, name); v != nullptr) {
+        return v;
+      }
+      if (!has_parent(*cur_scope)) {
+        break;
+      }
+      cur_scope = &m_scopes[cur_scope->m_parent];
+    };
+    return nullptr;
+  }
+
+  std::vector<scope_t> m_scopes{1};
+  std::size_t m_cur_scope{0};
+};
+} // namespace codegen
 namespace parser {
 std::ostream& operator<<(std::ostream& os, parse_error_t const& pe) {
   return std::visit(
@@ -30,6 +227,22 @@ std::ostream& operator<<(std::ostream& os, parse_error_t const& pe) {
       pe);
 }
 
+void ast_t::codegen() const {
+  codegen::codegen_t cg;
+  auto* main_fn =
+      llvm::dyn_cast<llvm::Function>(cg.m_module->getOrInsertFunction("main", cg.m_builder->getVoidTy()).getCallee());
+  auto* bb = llvm::BasicBlock::Create(*cg.m_context, "entry", main_fn);
+  cg.m_builder->SetInsertPoint(bb);
+  cg.compile_env(m_top_env);
+  cg.m_builder->CreateRetVoid();
+  assert(!llvm::verifyFunction(*main_fn, &llvm::errs()));
+
+  cg.m_module->print(llvm::errs(), nullptr);
+
+  std::unique_ptr<llvm::ExecutionEngine> ee{llvm::EngineBuilder(std::move(cg.m_module)).create()};
+  [[maybe_unused]] auto ret = ee->runFunction(ee->FindFunctionNamed("main"), {});
+}
+
 llvm::Value* expression_binary_op_t::codegen(codegen::codegen_t& cg) const {
   auto* lhs = m_lhs->codegen(cg);
   auto* rhs = m_rhs->codegen(cg);
@@ -37,13 +250,13 @@ llvm::Value* expression_binary_op_t::codegen(codegen::codegen_t& cg) const {
   using enum lexer::symbol_t;
   switch (m_op.symbol) {
   case plus:
-    return cg.m_builder.CreateAdd(lhs, rhs, "addtmp");
+    return cg.m_builder->CreateAdd(lhs, rhs, "addtmp");
   case minus:
-    return cg.m_builder.CreateSub(lhs, rhs, "subtmp");
+    return cg.m_builder->CreateSub(lhs, rhs, "subtmp");
   case times:
-    return cg.m_builder.CreateMul(lhs, rhs, "multmp");
+    return cg.m_builder->CreateMul(lhs, rhs, "multmp");
   case divide:
-    return cg.m_builder.CreateSDiv(lhs, rhs, "divtmp");
+    return cg.m_builder->CreateSDiv(lhs, rhs, "divtmp");
   default:
     __builtin_unreachable();
   }
@@ -58,14 +271,14 @@ llvm::Value* ident_t::codegen(codegen::codegen_t& cg) const {
     return value;
   }
   if (auto* value = cg.find_var(sv(m_name)); value != nullptr) {
-    return cg.m_builder.CreateLoad(cg.m_int_type, value, sv(m_name));
+    return cg.m_builder->CreateLoad(cg.m_int_type, value, sv(m_name));
   }
   return nullptr;
 }
 
 void call_t::codegen(codegen::codegen_t& cg) const {
   auto* func = cg.find_function(parser::sv(m_ident));
-  cg.m_builder.CreateCall(func);
+  cg.m_builder->CreateCall(func);
 }
 
 void in_t::codegen(codegen::codegen_t& /*cg*/) const {}
@@ -73,17 +286,17 @@ void in_t::codegen(codegen::codegen_t& /*cg*/) const {}
 void out_t::codegen(codegen::codegen_t& cg) const {
   auto* func = cg.find_function("out");
 
-  cg.m_builder.CreateCall(func, {m_expression->codegen(cg)});
+  cg.m_builder->CreateCall(func, {m_expression->codegen(cg)});
 }
 
 void becomes_t::codegen(codegen::codegen_t& cg) const {
   if (auto* value = cg.find_var(sv(m_name)); value != nullptr) {
-    cg.m_builder.CreateStore(value, m_expression->codegen(cg));
+    cg.m_builder->CreateStore(m_expression->codegen(cg), value);
   }
 }
 
 llvm::Value* odd_condition_t::codegen(codegen::codegen_t& cg) const {
-  return cg.m_builder.CreateICmpNE(m_expression->codegen(cg), cg.m_builder.getInt64(0), "oddtmp");
+  return cg.m_builder->CreateICmpNE(m_expression->codegen(cg), cg.m_builder->getInt64(0), "oddtmp");
 }
 
 llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
@@ -93,17 +306,17 @@ llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
   using enum lexer::symbol_t;
   switch (m_op.symbol) {
   case greater:
-    return cg.m_builder.CreateICmpSGT(lhs, rhs, "gttmp");
+    return cg.m_builder->CreateICmpSGT(lhs, rhs, "gttmp");
   case greater_equal:
-    return cg.m_builder.CreateICmpSGE(lhs, rhs, "getmp");
+    return cg.m_builder->CreateICmpSGE(lhs, rhs, "getmp");
   case less:
-    return cg.m_builder.CreateICmpSLT(lhs, rhs, "lttmp");
+    return cg.m_builder->CreateICmpSLT(lhs, rhs, "lttmp");
   case less_equal:
-    return cg.m_builder.CreateICmpSGE(lhs, rhs, "letmp");
+    return cg.m_builder->CreateICmpSGE(lhs, rhs, "letmp");
   case equal:
-    return cg.m_builder.CreateICmpEQ(lhs, rhs, "eqtmp");
+    return cg.m_builder->CreateICmpEQ(lhs, rhs, "eqtmp");
   case not_equal:
-    return cg.m_builder.CreateICmpNE(lhs, rhs, "netmp");
+    return cg.m_builder->CreateICmpNE(lhs, rhs, "netmp");
   default:
     __builtin_unreachable();
   }
@@ -111,38 +324,38 @@ llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
 
 void if_then_t::codegen(codegen::codegen_t& cg) const {
   auto* cond = m_condition->codegen(cg);
-  auto* fn = cg.m_builder.GetInsertBlock()->getParent();
-  auto* bb_then = llvm::BasicBlock::Create(cg.m_context, "ifthen", fn);
-  auto* bb_phi = llvm::BasicBlock::Create(cg.m_context, "ifphi");
-  cg.m_builder.CreateCondBr(cond, bb_then, bb_phi);
+  auto* fn = cg.m_builder->GetInsertBlock()->getParent();
+  auto* bb_then = llvm::BasicBlock::Create(*cg.m_context, "ifthen", fn);
+  auto* bb_phi = llvm::BasicBlock::Create(*cg.m_context, "ifphi");
+  cg.m_builder->CreateCondBr(cond, bb_then, bb_phi);
 
-  cg.m_builder.SetInsertPoint(bb_then);
+  cg.m_builder->SetInsertPoint(bb_then);
   m_statement->codegen(cg);
-  cg.m_builder.CreateBr(bb_phi);
+  cg.m_builder->CreateBr(bb_phi);
   fn->getBasicBlockList().push_back(bb_phi);
-  cg.m_builder.SetInsertPoint(bb_phi);
+  cg.m_builder->SetInsertPoint(bb_phi);
 }
 
 void while_do_t::codegen(codegen::codegen_t& cg) const {
-  auto* bb_cond = llvm::BasicBlock::Create(cg.m_context, "whilecond");
-  cg.m_builder.CreateBr(bb_cond);
+  auto* bb_cond = llvm::BasicBlock::Create(*cg.m_context, "whilecond");
+  cg.m_builder->CreateBr(bb_cond);
 
-  auto* fn = cg.m_builder.GetInsertBlock()->getParent();
+  auto* fn = cg.m_builder->GetInsertBlock()->getParent();
   fn->getBasicBlockList().push_back(bb_cond);
-  cg.m_builder.SetInsertPoint(bb_cond);
+  cg.m_builder->SetInsertPoint(bb_cond);
 
   auto* cond = m_condition->codegen(cg);
 
-  auto* bb_body = llvm::BasicBlock::Create(cg.m_context, "whilebody", fn);
-  auto* bb_phi = llvm::BasicBlock::Create(cg.m_context, "whilephi", fn);
-  cg.m_builder.CreateCondBr(cond, bb_body, bb_phi);
+  auto* bb_body = llvm::BasicBlock::Create(*cg.m_context, "whilebody", fn);
+  auto* bb_phi = llvm::BasicBlock::Create(*cg.m_context, "whilephi", fn);
+  cg.m_builder->CreateCondBr(cond, bb_body, bb_phi);
 
-  cg.m_builder.SetInsertPoint(bb_body);
+  cg.m_builder->SetInsertPoint(bb_body);
   m_statement->codegen(cg);
 
-  cg.m_builder.CreateBr(bb_cond);
+  cg.m_builder->CreateBr(bb_cond);
   fn->getBasicBlockList().push_back(bb_phi);
-  cg.m_builder.SetInsertPoint(bb_phi);
+  cg.m_builder->SetInsertPoint(bb_phi);
 }
 
 void begin_end_t::codegen(codegen::codegen_t& cg) const {

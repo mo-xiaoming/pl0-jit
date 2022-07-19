@@ -119,7 +119,7 @@ private:
 [[nodiscard]] lex_result_t lex(source_cursor_t cursor);
 } // namespace internal
 
-lex_result_t lex_source_file(std::string const& source_path);
+std::pair<std::vector<char>, lex_result_t> lex_source_file(std::string const& source_path);
 } // namespace lexer
 
 #endif

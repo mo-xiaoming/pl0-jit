@@ -4,12 +4,12 @@
 
 namespace lexer {
 
-lex_result_t lex_source_file(std::string const& source_path) {
+std::pair<std::vector<char>, lex_result_t> lex_source_file(std::string const& source_path) {
   auto const err_fn = [&source_path] { return lex_error_file_unreadable_t{.source_path = source_path}; };
 
   auto file = std::ifstream(source_path);
   if (!file) {
-    return err_fn();
+    return {{}, err_fn()};
   }
 
   std::vector<char> buffer(static_cast<std::size_t>(file.seekg(0, std::ios::end).tellg()));
@@ -17,9 +17,9 @@ lex_result_t lex_source_file(std::string const& source_path) {
     auto const cursor =
         internal::source_cursor_t(internal::source_content_t(buffer.data()), internal::source_size_t(buffer.size()),
                                   internal::source_position_t(0U));
-    return lex(cursor);
+    return {std::move(buffer), lex(cursor)};
   }
-  return err_fn();
+  return {std::move(buffer), err_fn()};
 }
 
 namespace internal {

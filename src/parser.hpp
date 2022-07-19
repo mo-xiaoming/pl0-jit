@@ -4,24 +4,6 @@
 #include "lexer_symbols.hpp"
 #include "utils/strings.hpp"
 
-#include <llvm/ADT/APFloat.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/GenericValue.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/LegacyPassManager.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Type.h>
-#include <llvm/IR/ValueSymbolTable.h>
-#include <llvm/IR/Verifier.h>
-#include <llvm/Support/TargetSelect.h>
-
 #include <any>
 #include <functional>
 #include <iostream>
@@ -32,6 +14,10 @@
 
 namespace codegen {
 struct codegen_t;
+}
+
+namespace llvm {
+class Value;
 }
 
 namespace parser {
@@ -334,7 +320,7 @@ private:
 
 struct procedure_t {
   procedure_t(lexer::token_t const& ident, environment_t&& env)
-      : m_ident(ident), m_env(std::make_unique<environment_t>(std::move(env))) {}
+      : m_ident(ident), m_env(std::make_unique<const environment_t>(std::move(env))) {}
 
   [[nodiscard]] std::string to_string() const { return info_str("procedure ", sv(m_ident), ';', *m_env, ';'); }
 
@@ -344,7 +330,7 @@ struct procedure_t {
 
 private:
   lexer::token_t m_ident;
-  std::unique_ptr<environment_t> m_env;
+  std::unique_ptr<const environment_t> m_env;
 };
 
 struct environment_t {
@@ -377,7 +363,7 @@ struct ast_t {
 
   [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, ast_t const& ast) { return os << ast.m_top_env; }
 
-  friend codegen::codegen_t;
+  void codegen() const;
 
 private:
   environment_t m_top_env;
@@ -454,161 +440,4 @@ private:
 };
 } // namespace parser
 
-namespace codegen {
-struct scope_t {
-  scope_t* m_parent = nullptr;
-  std::string_view name;
-  std::map<std::string_view, llvm::ConstantInt*> m_consts;
-  std::map<std::string_view, llvm::AllocaInst*> m_vars;
-  std::map<std::string_view, llvm::Function*> m_funcs;
-
-  [[maybe_unused]] friend std::ostream& operator<<(std::ostream& os, scope_t const& c) {
-    os << "const table\n";
-    for (auto const& p : c.m_consts) {
-      os << "  " << p.first << ':' << llvm::dyn_cast<llvm::ConstantInt>(p.second)->getSExtValue() << '\n';
-    }
-    os << "var table\n";
-    for (auto const& p : c.m_vars) {
-      os << "  " << p.first << ':' << llvm::dyn_cast<llvm::ConstantInt>(p.second)->getSExtValue() << '\n';
-    }
-    os << "func table\n";
-    for (auto const& p : c.m_funcs) {
-      os << "  " << p.first << ':' << static_cast<void const*>(p.second) << '\n';
-    }
-    return os;
-  }
-};
-
-struct codegen_t {
-  codegen_t() {
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-
-    auto* out_fn = create_std_out();
-    add_fn_to_scope("out", out_fn);
-  }
-
-  void compile_env(parser::environment_t const& env) {
-    for (auto const& c : env.consts) {
-      add_const_to_scope(parser::sv(c.m_ident), llvm::ConstantInt::get(m_int_type, parser::sv(c.m_num), 10));
-    }
-    for (auto const& v : env.vars) {
-      add_var_to_scope(parser::sv(v.m_ident), m_builder.CreateAlloca(m_int_type, nullptr, parser::sv(v.m_ident)));
-    }
-    for (auto const& p : env.procedures) {
-      auto* proto = llvm::FunctionType::get(llvm::Type::getVoidTy(m_context), /*isVarArg*/ false);
-
-      auto* fn = llvm::Function::Create(proto, llvm::Function::ExternalLinkage, parser::sv(p.m_ident), m_module);
-      auto* bb = llvm::BasicBlock::Create(m_context, "entry", fn);
-      if (bb == nullptr) {
-        fn->eraseFromParent();
-        assert(false); // NOLINT
-      }
-      m_builder.SetInsertPoint(bb);
-
-      m_scopes.emplace_back();
-      m_scopes.back().m_parent = m_cur_scope;
-      m_cur_scope = &m_scopes.back();
-      m_cur_scope->name = parser::sv(p.m_ident);
-      compile_env(*p.m_env);
-      m_cur_scope = m_cur_scope->m_parent;
-
-      m_builder.CreateRetVoid();
-
-      if (!llvm::verifyFunction(*fn, &llvm::errs())) {
-        fn->eraseFromParent();
-        assert(false); // NOLINT
-      }
-
-      add_fn_to_scope(parser::sv(p.m_ident), fn);
-    }
-    for (auto const& s : env.statements) {
-      s->codegen(*this);
-    }
-  }
-
-  llvm::Function* create_std_out() {
-    auto* out =
-        dyn_cast<llvm::Function>(m_module.getOrInsertFunction("out", m_builder.getVoidTy(), m_int_type).getCallee());
-
-    auto* bb = llvm::BasicBlock::Create(m_context, "entry", out);
-    m_builder.SetInsertPoint(bb);
-
-    auto printf_fn = m_module.getOrInsertFunction(
-        "printf", llvm::FunctionType::get(m_builder.getInt32Ty(), llvm::PointerType::get(m_builder.getInt8Ty(), 0),
-                                          /*isVarArg*/ true));
-    auto* val = &*out->arg_begin();
-    auto* fmt = m_builder.CreateGlobalStringPtr("%ld\n", ".printf.fmt");
-    m_builder.CreateCall(printf_fn, {fmt, val});
-    m_builder.CreateRetVoid();
-
-    if (!llvm::verifyFunction(*out)) {
-      return nullptr;
-    }
-    return out;
-  }
-
-  llvm::LLVMContext m_context;
-  llvm::Module m_module{"main", m_context};
-  llvm::IRBuilder<> m_builder{m_context};
-
-  llvm::IntegerType* m_int_type = m_builder.getInt64Ty();
-
-  void add_fn_to_scope(std::string_view name, llvm::Function* fn) {
-    assert(fn != nullptr); // NOLINT
-    m_cur_scope->m_funcs[name] = fn;
-  }
-  void add_const_to_scope(std::string_view name, llvm::ConstantInt* value) {
-    assert(value != nullptr); // NOLINT
-    m_cur_scope->m_consts[name] = value;
-  }
-  void add_var_to_scope(std::string_view name, llvm::AllocaInst* value) {
-    assert(value != nullptr); // NOLINT
-    m_cur_scope->m_vars[name] = value;
-  }
-
-  template <typename R, typename C> R* find_name(C const& c, std::string_view name) {
-    if (auto const it = std::find_if(c.cbegin(), c.cend(), [name](auto const& p) { return p.first == name; });
-        it != c.cend()) {
-      return it->second;
-    }
-    return nullptr;
-  };
-
-  llvm::ConstantInt* find_const(std::string_view name) {
-    for (auto const* cur_scope = m_cur_scope; cur_scope != nullptr; cur_scope = cur_scope->m_parent) {
-      if (auto* v = find_name<llvm::ConstantInt>(cur_scope->m_consts, name); v != nullptr) {
-        return v;
-      }
-    }
-    return nullptr;
-  }
-
-  llvm::AllocaInst* find_var(std::string_view name) {
-    for (auto const* cur_scope = m_cur_scope; cur_scope != nullptr; cur_scope = cur_scope->m_parent) {
-      if (auto const v = find_name<llvm::AllocaInst>(cur_scope->m_vars, name); v != nullptr) {
-        return v;
-      }
-    }
-    return nullptr;
-  }
-
-  llvm::Function* find_function(std::string_view name) {
-    for (auto const* cur_scope = m_cur_scope; cur_scope != nullptr; cur_scope = cur_scope->m_parent) {
-      // current procedure
-      // don't support recursion
-      if (cur_scope->m_parent != nullptr && cur_scope->name == name) {
-        return nullptr;
-      }
-      if (auto* const v = find_name<llvm::Function>(cur_scope->m_funcs, name); v != nullptr) {
-        return v;
-      }
-    }
-    return nullptr;
-  }
-
-  std::vector<scope_t> m_scopes{1};
-  scope_t* m_cur_scope{m_scopes.data()};
-};
-} // namespace codegen
 #endif

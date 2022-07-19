@@ -33,7 +33,7 @@ factor =
 
 ## Limitations
 
-Too lazy to fix them
+Too lazy to fix them / Not a big fan of Pascal
 
 1. `const` doesn't accept negative number
 2. No line numbers on error messages, just something like,
@@ -46,5 +46,12 @@ Too lazy to fix them
 3. Can do better with function redefinitions error, just like variable redefinitions
 
     ```
-    example
+    parse_error_name_redefined_t: x previously defined at
+         00|  const x = 42;
+                    ^
+    redefined at
+         00|  const x = 7;
+                    ^
     ```
+4. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
+5. Didn't do enough error checking on codegen phase
