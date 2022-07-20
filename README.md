@@ -53,5 +53,6 @@ Too lazy to fix them / Not a big fan of Pascal
          00|  const x = 7;
                     ^
     ```
-4. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
-5. Didn't do enough error checking on codegen phase
+4. Errors can be more ergonomics in general
+5. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
+6. Didn't do enough error checking on codegen phase
