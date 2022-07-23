@@ -1,3 +1,8 @@
+#[[
+init_llvm()
+target_add_llvm(TARGET, "core;orcjit;nativecodegen")
+]]
+
 macro(init_llvm)
   find_package(LLVM CONFIG REQUIRED)
   include(HandleLLVMOptions)

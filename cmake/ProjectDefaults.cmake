@@ -24,7 +24,7 @@ target_compile_options(default_compile_options INTERFACE "$<$<CXX_COMPILER_ID:Ap
 add_library(default_compile_warnings INTERFACE)
 set(CMAKE_CXX_FLAGS_DEBUG "")
 target_compile_options(default_compile_warnings INTERFACE "$<$<CONFIG:Release>:-Werror;-Wfatal-errors>")
-target_compile_options(default_compile_warnings INTERFACE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wcast-qual -Wunused -Woverloaded-virtual -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wfloat-equal -Wmissing-declarations -Wmissing-include-dirs -Wredundant-decls -Wundef -Wzero-as-null-pointer-constant)
+target_compile_options(default_compile_warnings INTERFACE -Wall -Wextra -Wshadow -Wno-delete-non-virtual-dtor -Wold-style-cast -Wcast-align -Wcast-qual -Wunused -Woverloaded-virtual -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wfloat-equal -Wmissing-declarations -Wmissing-include-dirs -Wredundant-decls -Wundef -Wzero-as-null-pointer-constant)
 target_compile_options(default_compile_warnings INTERFACE "$<$<CXX_COMPILER_ID:GNU>:-Wmisleading-indentation;-Wduplicated-cond;-Wduplicated-branches;-Wlogical-op;-Wuseless-cast>")
 
 add_library(default_sanitizer_compile_options INTERFACE)

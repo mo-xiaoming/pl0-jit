@@ -19,8 +19,6 @@
 
 #include <cassert>
 #include <charconv>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Function.h>
 #include <map>
 
 namespace codegen {
@@ -325,6 +323,7 @@ llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
 void if_then_t::codegen(codegen::codegen_t& cg) const {
   auto* cond = m_condition->codegen(cg);
   auto* fn = cg.m_builder->GetInsertBlock()->getParent();
+
   auto* bb_then = llvm::BasicBlock::Create(*cg.m_context, "ifthen", fn);
   auto* bb_phi = llvm::BasicBlock::Create(*cg.m_context, "ifphi");
   cg.m_builder->CreateCondBr(cond, bb_then, bb_phi);
@@ -332,6 +331,7 @@ void if_then_t::codegen(codegen::codegen_t& cg) const {
   cg.m_builder->SetInsertPoint(bb_then);
   m_statement->codegen(cg);
   cg.m_builder->CreateBr(bb_phi);
+
   fn->getBasicBlockList().push_back(bb_phi);
   cg.m_builder->SetInsertPoint(bb_phi);
 }
