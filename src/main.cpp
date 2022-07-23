@@ -5,12 +5,18 @@
 int main() {
 #if 1
   auto const tokens = std::get<lexer::tokens_t>(lex_string(R"(
+  procedure print_13_out_of_42;
   var a;
-  procedure square;
   begin
-    a := 3
+    a := 42;
+    while a > 10 do
+    begin
+      a := a-1;
+      if a = 13 then
+        !a
+    end
   end;
-  call square 
+  call print_13_out_of_42
   .
   )"));
   auto parser = parser::parser_t{tokens};

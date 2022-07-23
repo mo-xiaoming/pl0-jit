@@ -89,13 +89,13 @@ struct codegen_t {
 
       m_builder->CreateRetVoid();
 
-      if (llvm::verifyFunction(*fn, &llvm::errs())) {
+      auto& os = llvm::errs();
+      if (llvm::verifyFunction(*fn, &os)) {
         fn->eraseFromParent();
         assert(false); // NOLINT
       }
 
       m_builder->SetInsertPoint(bb_prev);
-
       add_fn_to_scope(parser::sv(p.m_ident), fn);
     }
     for (auto const& s : env.statements) {
@@ -103,7 +103,7 @@ struct codegen_t {
     }
   }
 
-  llvm::Function* create_std_out() {
+  llvm::Function* create_std_out() const {
     auto* out =
         dyn_cast<llvm::Function>(m_module->getOrInsertFunction("out", m_builder->getVoidTy(), m_int_type).getCallee());
 
@@ -114,7 +114,7 @@ struct codegen_t {
         "printf", llvm::FunctionType::get(m_builder->getInt32Ty(), llvm::PointerType::get(m_builder->getInt8Ty(), 0),
                                           /*isVarArg*/ true));
     auto* val = &*out->arg_begin();
-    auto* fmt = m_builder->CreateGlobalStringPtr("%ld\n", "printffmt");
+    auto* fmt = m_builder->CreateGlobalStringPtr("%ld\n", "fmt");
     m_builder->CreateCall(printf_fn, {fmt, val});
     m_builder->CreateRetVoid();
 
@@ -248,13 +248,13 @@ llvm::Value* expression_binary_op_t::codegen(codegen::codegen_t& cg) const {
   using enum lexer::symbol_t;
   switch (m_op.symbol) {
   case plus:
-    return cg.m_builder->CreateAdd(lhs, rhs, "addtmp");
+    return cg.m_builder->CreateAdd(lhs, rhs, "add");
   case minus:
-    return cg.m_builder->CreateSub(lhs, rhs, "subtmp");
+    return cg.m_builder->CreateSub(lhs, rhs, "sub");
   case times:
-    return cg.m_builder->CreateMul(lhs, rhs, "multmp");
+    return cg.m_builder->CreateMul(lhs, rhs, "mul");
   case divide:
-    return cg.m_builder->CreateSDiv(lhs, rhs, "divtmp");
+    return cg.m_builder->CreateSDiv(lhs, rhs, "div");
   default:
     __builtin_unreachable();
   }
@@ -294,7 +294,7 @@ void becomes_t::codegen(codegen::codegen_t& cg) const {
 }
 
 llvm::Value* odd_condition_t::codegen(codegen::codegen_t& cg) const {
-  return cg.m_builder->CreateICmpNE(m_expression->codegen(cg), cg.m_builder->getInt64(0), "oddtmp");
+  return cg.m_builder->CreateICmpNE(m_expression->codegen(cg), cg.m_builder->getInt64(0), "odd");
 }
 
 llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
@@ -304,17 +304,17 @@ llvm::Value* cmp_condition_t::codegen(codegen::codegen_t& cg) const {
   using enum lexer::symbol_t;
   switch (m_op.symbol) {
   case greater:
-    return cg.m_builder->CreateICmpSGT(lhs, rhs, "gttmp");
+    return cg.m_builder->CreateICmpSGT(lhs, rhs, "gt");
   case greater_equal:
-    return cg.m_builder->CreateICmpSGE(lhs, rhs, "getmp");
+    return cg.m_builder->CreateICmpSGE(lhs, rhs, "ge");
   case less:
-    return cg.m_builder->CreateICmpSLT(lhs, rhs, "lttmp");
+    return cg.m_builder->CreateICmpSLT(lhs, rhs, "lt");
   case less_equal:
-    return cg.m_builder->CreateICmpSGE(lhs, rhs, "letmp");
+    return cg.m_builder->CreateICmpSLE(lhs, rhs, "le");
   case equal:
-    return cg.m_builder->CreateICmpEQ(lhs, rhs, "eqtmp");
+    return cg.m_builder->CreateICmpEQ(lhs, rhs, "eq");
   case not_equal:
-    return cg.m_builder->CreateICmpNE(lhs, rhs, "netmp");
+    return cg.m_builder->CreateICmpNE(lhs, rhs, "ne");
   default:
     __builtin_unreachable();
   }
@@ -347,7 +347,7 @@ void while_do_t::codegen(codegen::codegen_t& cg) const {
   auto* cond = m_condition->codegen(cg);
 
   auto* bb_body = llvm::BasicBlock::Create(*cg.m_context, "whilebody", fn);
-  auto* bb_phi = llvm::BasicBlock::Create(*cg.m_context, "whilephi", fn);
+  auto* bb_phi = llvm::BasicBlock::Create(*cg.m_context, "whilephi");
   cg.m_builder->CreateCondBr(cond, bb_body, bb_phi);
 
   cg.m_builder->SetInsertPoint(bb_body);
