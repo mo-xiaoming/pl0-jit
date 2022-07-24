@@ -31,17 +31,19 @@ factor =
     | "(" expression ")" .
 ```
 
-## Build
+## Build and run
 
 This is a typical cmake project, just guarantee `gtest` and `llvm` can be found by cmake.
 
 The default build type is debug build with address and undefined sanitizers.
 
+Executing the built binary `pl0-jit`, you'll see one screen of LLVM IR and `13` gets printed at the last line.
+
 ## Limitations
 
 Too lazy to fix them / Not a big fan of Pascal
 
-1. Doesn't handle accessing variables in parent scope well, because I totally forget the Pascal grammar
+1. Doesn't handle accessing variables in parent scope well, because I totally forget the Pascal grammar, and too lazy to check how PL0 works
 2. `const` doesn't accept negative number
 3. No line numbers on error messages, just something like,
 
