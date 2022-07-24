@@ -31,6 +31,12 @@ factor =
     | "(" expression ")" .
 ```
 
+## Build
+
+This is a typical cmake project, just guarantee `gtest` and `llvm` can be found by cmake.
+
+The default build type is debug build with address and undefined sanitizers.
+
 ## Limitations
 
 Too lazy to fix them / Not a big fan of Pascal
