@@ -13,6 +13,7 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/InstCombine/InstCombine.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
@@ -20,6 +21,7 @@
 #include <cassert>
 #include <charconv>
 #include <map>
+#include <memory>
 
 namespace codegen {
 struct scope_t {
@@ -62,6 +64,8 @@ struct codegen_t {
     m_fpm->add(llvm::createGVNPass());
     m_fpm->add(llvm::createCFGSimplificationPass());
     m_fpm->doInitialization();
+
+    m_mpm->add(llvm::createFunctionInliningPass());
 
     auto* out_fn = create_std_out();
     add_fn_to_scope("out", out_fn);
@@ -136,6 +140,7 @@ struct codegen_t {
   std::unique_ptr<llvm::IRBuilder<>> m_builder{std::make_unique<llvm::IRBuilder<>>(*m_context)};
   std::unique_ptr<llvm::legacy::FunctionPassManager> m_fpm{
       std::make_unique<llvm::legacy::FunctionPassManager>(m_module.get())};
+  std::unique_ptr<llvm::legacy::PassManager> m_mpm{std::make_unique<llvm::legacy::PassManager>()};
 
   llvm::IntegerType* m_int_type = m_builder->getInt64Ty();
 
@@ -244,6 +249,8 @@ void ast_t::codegen() const {
   cg.compile_env(m_top_env);
   cg.m_builder->CreateRetVoid();
   assert(!llvm::verifyFunction(*main_fn, &llvm::errs()));
+
+  cg.m_mpm->run(*cg.m_module);
 
   cg.m_module->print(llvm::errs(), nullptr);
 

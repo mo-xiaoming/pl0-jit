@@ -2,7 +2,7 @@ init_llvm()
 
 add_library(pl0-jit-lib lexer.cpp parser.cpp annotation.cpp)
 target_link_libraries(pl0-jit-lib PUBLIC project_defaults)
-target_add_llvm(pl0-jit-lib "core;nativecodegen;mcjit")
+target_add_llvm(pl0-jit-lib "core;nativecodegen;mcjit;ipo")
 
 add_executable(pl0-jit-test lexer_test.cpp parser_test.cpp)
 target_link_libraries(pl0-jit-test PRIVATE pl0-jit-lib GTest::gtest GTest::gtest_main)
