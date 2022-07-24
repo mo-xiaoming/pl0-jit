@@ -1,4 +1,4 @@
-# static/jit compiler for PL0
+# static/jit compiler for [PL0](https://en.wikipedia.org/wiki/PL/0)
 
 ```
 program = block "." .
@@ -56,3 +56,4 @@ Too lazy to fix them / Not a big fan of Pascal
 4. Errors can be more ergonomics in general
 5. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
 6. Didn't do enough error checking on codegen phase
+7. Doesn't handle accessing variables in parent scope well, because I totally forget the Pascal grammar

@@ -1,21 +1,21 @@
 #include "parser.hpp"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
-#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
-#include <llvm/IR/ValueSymbolTable.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Scalar/GVN.h>
 
 #include <cassert>
 #include <charconv>
@@ -57,6 +57,12 @@ struct codegen_t {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
+    m_fpm->add(llvm::createInstructionCombiningPass());
+    m_fpm->add(llvm::createReassociatePass());
+    m_fpm->add(llvm::createGVNPass());
+    m_fpm->add(llvm::createCFGSimplificationPass());
+    m_fpm->doInitialization();
+
     auto* out_fn = create_std_out();
     add_fn_to_scope("out", out_fn);
   }
@@ -94,6 +100,7 @@ struct codegen_t {
         fn->eraseFromParent();
         assert(false); // NOLINT
       }
+      m_fpm->run(*fn);
 
       m_builder->SetInsertPoint(bb_prev);
       add_fn_to_scope(parser::sv(p.m_ident), fn);
@@ -127,6 +134,8 @@ struct codegen_t {
   std::unique_ptr<llvm::LLVMContext> m_context{std::make_unique<llvm::LLVMContext>()};
   std::unique_ptr<llvm::Module> m_module{std::make_unique<llvm::Module>("jit-main-module", *m_context)};
   std::unique_ptr<llvm::IRBuilder<>> m_builder{std::make_unique<llvm::IRBuilder<>>(*m_context)};
+  std::unique_ptr<llvm::legacy::FunctionPassManager> m_fpm{
+      std::make_unique<llvm::legacy::FunctionPassManager>(m_module.get())};
 
   llvm::IntegerType* m_int_type = m_builder->getInt64Ty();
 
@@ -202,6 +211,7 @@ struct codegen_t {
   std::size_t m_cur_scope{0};
 };
 } // namespace codegen
+
 namespace parser {
 std::ostream& operator<<(std::ostream& os, parse_error_t const& pe) {
   return std::visit(
