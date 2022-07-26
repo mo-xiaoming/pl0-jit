@@ -252,7 +252,7 @@ void ast_t::codegen() const {
 
   cg.m_mpm->run(*cg.m_module);
 
-  cg.m_module->print(llvm::errs(), nullptr);
+  // cg.m_module->print(llvm::errs(), nullptr);
 
   std::unique_ptr<llvm::ExecutionEngine> ee{llvm::EngineBuilder(std::move(cg.m_module)).create()};
   [[maybe_unused]] auto ret = ee->runFunction(ee->FindFunctionNamed("main"), {});

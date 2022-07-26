@@ -37,22 +37,41 @@ This is a typical cmake project, just guarantee `gtest` and `llvm` can be found 
 
 The default build type is debug build with address and undefined sanitizers.
 
-Executing the built binary `pl0-jit`, you'll see one screen of LLVM IR and `13` gets printed at the last line.
+Executing the built binary `pl0-jit`, you'll see `42` gets printed.
+
+The source code is embedded in [src/main.cpp](src/main.cpp)
+
+```pascal
+procedure print_42_out_of_100;
+var a;
+begin
+  a := 100;
+  while a > 10 do
+  begin
+    a := a-1;
+    if a = 13 then
+      !2 + 5 * (a - 5)
+  end
+end;
+call print_42_out_of_100
+.
+```
 
 ## Limitations
 
 Too lazy to fix them / Not a big fan of Pascal
 
 1. Doesn't handle accessing variables in parent scope well, because I totally forget the Pascal grammar, and too lazy to check how PL0 works
-2. `const` doesn't accept negative number
-3. No line numbers on error messages, just something like,
+2. Tried to refactor codegen part to llvm c api, then found out they are not friendly with non-null-terminated strings
+3. `const` doesn't accept negative number
+4. No line numbers on error messages, just something like,
 
     ```
     parse_error_unexpected_t: expected number, but got -
          00|const a = -3;.
                       ^
     ```
-4. Can do better with function redefinitions error, just like variable redefinitions
+5. Can do better with function redefinitions error, just like variable redefinitions
 
     ```
     parse_error_name_redefined_t: x previously defined at
@@ -62,6 +81,6 @@ Too lazy to fix them / Not a big fan of Pascal
          00|  const x = 7;
                     ^
     ```
-5. Errors can be more ergonomics in general
-6. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
-7. Didn't do enough error checking on codegen phase
+6. Errors can be more ergonomics in general
+7. Reading from source file is broken, file buffer is released after lexing, which renders every token invalid
+8. Didn't do enough error checking on codegen phase
